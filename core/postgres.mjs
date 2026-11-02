@@ -17,8 +17,10 @@ export async function initDatabase(){
  role TEXT NOT NULL CHECK(role IN ('user','assistant')),
  content TEXT NOT NULL,
  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
- embedding vector(384)
+ embedding vector(384),
+ chat_message_id BIGINT UNIQUE
  )`);
+ await db.query('ALTER TABLE amayori_memories ADD COLUMN IF NOT EXISTS chat_message_id BIGINT UNIQUE');
  await db.query('CREATE INDEX IF NOT EXISTS amayori_memories_created_idx ON amayori_memories(created_at DESC)');
  return {enabled:true};
 }
@@ -87,10 +89,11 @@ export async function ensureKnowledgeTables(){
  const db=await database();if(!db)return null;
  await db.query(`CREATE TABLE IF NOT EXISTS amayori_facts(
  id BIGSERIAL PRIMARY KEY, subject TEXT NOT NULL, predicate TEXT NOT NULL,
- object TEXT NOT NULL, source TEXT NOT NULL DEFAULT 'chat',
+ object TEXT NOT NULL, source TEXT NOT NULL DEFAULT 'chat', source_message_id BIGINT,
  confidence REAL NOT NULL DEFAULT 1 CHECK(confidence BETWEEN 0 AND 1),
  status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','superseded','rejected')),
  superseded_by BIGINT, created_at TIMESTAMPTZ NOT NULL DEFAULT now())`);
+ await db.query('ALTER TABLE amayori_facts ADD COLUMN IF NOT EXISTS source_message_id BIGINT');
  await db.query('CREATE INDEX IF NOT EXISTS amayori_facts_lookup_idx ON amayori_facts(subject,predicate,status)');
  await db.query(`CREATE TABLE IF NOT EXISTS amayori_feedback(
  id BIGSERIAL PRIMARY KEY, chat_excerpt TEXT NOT NULL,
@@ -98,7 +101,8 @@ export async function ensureKnowledgeTables(){
  note TEXT NOT NULL DEFAULT '', created_at TIMESTAMPTZ NOT NULL DEFAULT now())`);
  return db;
 }
-export async function saveFact({subject,predicate,object,source='user-confirmed'}){
+export async function saveFact({subject,predicate,object,source='user-confirmed',sourceMessageId=null}){
+ if(sourceMessageId!==null&&(!Number.isSafeInteger(sourceMessageId)||sourceMessageId<1))throw Error('Invalid source message ID');
  for(const value of [subject,predicate,object,source])if(typeof value!=='string'||!value.trim()||value.length>500)throw Error('Invalid fact');
  const db=await ensureKnowledgeTables();if(!db)throw Error('PostgreSQL required for knowledge');
  const client=await db.connect();try{
@@ -106,7 +110,7 @@ export async function saveFact({subject,predicate,object,source='user-confirmed'
  const prior=await client.query('SELECT id,object FROM amayori_facts WHERE subject=$1 AND predicate=$2 AND status=$3 FOR UPDATE',[subject,predicate,'active']);
  const same=prior.rows.find(x=>x.object===object);
  if(same){await client.query('COMMIT');return {id:same.id,changed:false,conflicts:[]}}
- const inserted=await client.query('INSERT INTO amayori_facts(subject,predicate,object,source) VALUES($1,$2,$3,$4) RETURNING id',[subject,predicate,object,source]);
+ const inserted=await client.query('INSERT INTO amayori_facts(subject,predicate,object,source,source_message_id) VALUES($1,$2,$3,$4,$5) RETURNING id',[subject,predicate,object,source,sourceMessageId]);
  const id=inserted.rows[0].id;
  if(prior.rows.length)await client.query("UPDATE amayori_facts SET status='superseded',superseded_by=$1 WHERE id=ANY($2::bigint[])",[id,prior.rows.map(x=>x.id)]);
  await client.query('COMMIT');return {id,changed:true,conflicts:prior.rows.map(x=>({id:x.id,object:x.object}))};
@@ -157,8 +161,26 @@ export async function golemVectorStatus(){
 
 export async function golemFactSource(id){
  const db=await ensureKnowledgeTables();if(!db)return null;
- const r=await db.query('SELECT id,subject,predicate,object,source,confidence,status,created_at FROM amayori_facts WHERE id=$1',[id]);return r.rows[0]||null;
+ const r=await db.query('SELECT id,subject,predicate,object,source,source_message_id,confidence,status,created_at FROM amayori_facts WHERE id=$1',[id]);const fact=r.rows[0];if(!fact)return null;
+ if(fact.source_message_id){const message=await db.query('SELECT id,role,content,created_at FROM amayori_chat_log WHERE id=$1',[fact.source_message_id]);fact.message=message.rows[0]||null;}
+ return fact;
 }
 export async function golemSimilar(embedding,limit=8){
  return searchMemory(embedding,limit);
+}
+
+export async function pendingChatEmbeddings(limit=5){
+ const db=await ensureCanonicalTable();
+ await initDatabase();
+ const r=await db.query("SELECT c.id,c.role,c.content FROM amayori_chat_log c WHERE NOT EXISTS(SELECT 1 FROM amayori_memories m WHERE m.chat_message_id=c.id) ORDER BY c.id LIMIT $1",[Math.max(1,Math.min(10,limit))]);
+ return r.rows;
+}
+export async function storeChatEmbedding(message,embedding){
+ if(!Array.isArray(embedding)||embedding.length!==384||!embedding.every(Number.isFinite))throw Error('Invalid embedding');
+ const db=await database();await db.query('INSERT INTO amayori_memories(chat_message_id,role,content,embedding) VALUES($1,$2,$3,$4::vector) ON CONFLICT (chat_message_id) DO NOTHING',[message.id,message.role,message.content,'['+embedding.join(',')+']']);
+}
+export async function embeddingProgress(){
+ const db=await ensureCanonicalTable();await initDatabase();
+ const r=await db.query('SELECT (SELECT COUNT(*)::int FROM amayori_chat_log) AS total,(SELECT COUNT(*)::int FROM amayori_memories WHERE chat_message_id IS NOT NULL AND embedding IS NOT NULL) AS indexed');
+ return r.rows[0];
 }
