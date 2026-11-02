@@ -35,3 +35,7 @@ MemOS, Graphiti и CrewAI пока не подключены — это нача
 Windows: `powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/setup-golem.ps1` скачивает исходники Golem при отсутствии каталога. Запуск агентов отключён. `scripts/backup.ps1 -Action backup`, `-Action list` и `-Action restore -Name YYYYMMDD-HHMMSS-fff` работают с локальными данными; перед восстановлением остановите сервер.
 
 MemOS и Graphiti требуют отдельного интеграционного слоя, настройки хранилища и тестирования. Наличие исходников само по себе не означает работающую интеграцию.
+
+## Проверки перед слиянием
+
+`npm.cmd test` запускает модульные и HTTP smoke-тесты, включая проверку того, что API настроек не возвращает секрет. CI выполняется через Node checks. Полный Windows-прогон, реальные Cloud.ru запросы и интеграции MemOS/Graphiti требуют отдельной проверки; не считать их завершёнными только по успешному CI.
