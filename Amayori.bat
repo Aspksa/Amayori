@@ -3,6 +3,9 @@ setlocal EnableExtensions DisableDelayedExpansion
 chcp 65001 >nul
 title Amayori
 cd /d "%~dp0" || (echo [ERROR] Cannot open project folder.& pause& exit /b 1)
+if /i "%~1"=="build-brain" goto build_brain
+if /i "%~1"=="help" goto usage
+if not "%~1"=="" goto usage
 if not exist "logs" mkdir "logs"
 set "LOG=%CD%\logs\start.log"
 where node.exe >nul 2>&1 || (echo [ERROR] Install Node.js LTS.& pause& exit /b 1)
@@ -27,3 +30,22 @@ if not defined READY (echo [ERROR] Server did not start. Check logs\start.log& p
 start "" "http://127.0.0.1:57474/"
 echo [OK] Browser opened. Server runs locally.
 exit /b 0
+
+:build_brain
+where py.exe >nul 2>&1 || (echo [ERROR] Python 3 is required to build the semantic brain.& pause& exit /b 1)
+echo [INFO] Installing optional Golem Python dependencies...
+py -3 -m pip install -r "integrations\golem\requirements.txt"
+if errorlevel 1 (echo [ERROR] Dependency installation failed.& pause& exit /b 1)
+echo [INFO] Building semantic memory cortex...
+py -3 "integrations\golem\build.py"
+if errorlevel 1 (echo [ERROR] Brain build failed. Create chats first, then retry.& pause& exit /b 1)
+echo [OK] Semantic brain is ready. Run Amayori.bat to open the app.
+pause
+exit /b 0
+
+:usage
+echo Usage:
+echo   Amayori.bat              - start the application
+echo   Amayori.bat build-brain  - install Python dependencies and build semantic brain
+echo   Amayori.bat help         - show this help
+exit /b 2
