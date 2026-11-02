@@ -81,3 +81,57 @@ export async function importCanonicalChats(messages){
   await client.query('COMMIT');
  }catch(e){await client.query('ROLLBACK');throw e}finally{client.release()}
 }
+
+/** Structured facts are versioned; superseded claims are kept for audit. */
+export async function ensureKnowledgeTables(){
+ const db=await database();if(!db)return null;
+ await db.query(`CREATE TABLE IF NOT EXISTS amayori_facts(
+ id BIGSERIAL PRIMARY KEY, subject TEXT NOT NULL, predicate TEXT NOT NULL,
+ object TEXT NOT NULL, source TEXT NOT NULL DEFAULT 'chat',
+ confidence REAL NOT NULL DEFAULT 1 CHECK(confidence BETWEEN 0 AND 1),
+ status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','superseded','rejected')),
+ superseded_by BIGINT, created_at TIMESTAMPTZ NOT NULL DEFAULT now())`);
+ await db.query('CREATE INDEX IF NOT EXISTS amayori_facts_lookup_idx ON amayori_facts(subject,predicate,status)');
+ await db.query(`CREATE TABLE IF NOT EXISTS amayori_feedback(
+ id BIGSERIAL PRIMARY KEY, chat_excerpt TEXT NOT NULL,
+ rating SMALLINT NOT NULL CHECK(rating IN (-1,1)),
+ note TEXT NOT NULL DEFAULT '', created_at TIMESTAMPTZ NOT NULL DEFAULT now())`);
+ return db;
+}
+export async function saveFact({subject,predicate,object,source='user-confirmed'}){
+ for(const value of [subject,predicate,object,source])if(typeof value!=='string'||!value.trim()||value.length>500)throw Error('Invalid fact');
+ const db=await ensureKnowledgeTables();if(!db)throw Error('PostgreSQL required for knowledge');
+ const client=await db.connect();try{
+ await client.query('BEGIN');
+ const prior=await client.query('SELECT id,object FROM amayori_facts WHERE subject=$1 AND predicate=$2 AND status=$3 FOR UPDATE',[subject,predicate,'active']);
+ const same=prior.rows.find(x=>x.object===object);
+ if(same){await client.query('COMMIT');return {id:same.id,changed:false,conflicts:[]}}
+ const inserted=await client.query('INSERT INTO amayori_facts(subject,predicate,object,source) VALUES($1,$2,$3,$4) RETURNING id',[subject,predicate,object,source]);
+ const id=inserted.rows[0].id;
+ if(prior.rows.length)await client.query("UPDATE amayori_facts SET status='superseded',superseded_by=$1 WHERE id=ANY($2::bigint[])",[id,prior.rows.map(x=>x.id)]);
+ await client.query('COMMIT');return {id,changed:true,conflicts:prior.rows.map(x=>({id:x.id,object:x.object}))};
+ }catch(e){await client.query('ROLLBACK');throw e}finally{client.release()}
+}
+export async function findFacts(query='',limit=15){
+ const db=await ensureKnowledgeTables();if(!db)return [];
+ const q=String(query).slice(0,200).replace(/[\\%_]/g,'\\$&');
+ const r=await db.query("SELECT id,subject,predicate,object,source,confidence,created_at FROM amayori_facts WHERE status='active' AND ($1='' OR subject ILIKE '%'||$1||'%' ESCAPE '\\' OR predicate ILIKE '%'||$1||'%' ESCAPE '\\' OR object ILIKE '%'||$1||'%' ESCAPE '\\') ORDER BY id DESC LIMIT $2",[q,Math.max(1,Math.min(50,limit))]);
+ return r.rows;
+}
+export async function knowledgeGraph(){
+ const db=await ensureKnowledgeTables();if(!db)return {nodes:[],edges:[]};
+ const r=await db.query("SELECT id,subject,predicate,object FROM amayori_facts WHERE status='active' ORDER BY id DESC LIMIT 500");
+ const nodes=new Map(),edges=[];
+ for(const f of r.rows){for(const name of [f.subject,f.object])if(!nodes.has(name))nodes.set(name,{id:name,label:name});edges.push({id:String(f.id),source:f.subject,target:f.object,label:f.predicate})}
+ return {nodes:[...nodes.values()],edges};
+}
+export async function saveFeedback({chatExcerpt,rating,note=''}) {
+ if(typeof chatExcerpt!=='string'||chatExcerpt.length>2000||!chatExcerpt.trim()||![-1,1].includes(rating)||typeof note!=='string'||note.length>1000)throw Error('Invalid feedback');
+ const db=await ensureKnowledgeTables();if(!db)throw Error('PostgreSQL required for feedback');
+ await db.query('INSERT INTO amayori_feedback(chat_excerpt,rating,note) VALUES($1,$2,$3)',[chatExcerpt,rating,note]);return {ok:true};
+}
+export async function feedbackStats(){
+ const db=await ensureKnowledgeTables();if(!db)return {positive:0,negative:0};
+ const r=await db.query('SELECT rating,COUNT(*)::int AS count FROM amayori_feedback GROUP BY rating');
+ return {positive:r.rows.find(x=>x.rating===1)?.count||0,negative:r.rows.find(x=>x.rating===-1)?.count||0};
+}
