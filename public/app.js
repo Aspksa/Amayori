@@ -14,3 +14,13 @@ $('#load-models').addEventListener('click',async()=>{const status=$('#models-sta
 const golemSettingsForm=$('#golem-settings-form');
 api('/api/golem/settings').then(s=>{$('#golem-default-view').value=s.defaultView;$('#golem-auto-rotate').checked=s.autoRotate;$('#golem-settings-size').value=s.nodeSize;}).catch(e=>$('#golem-settings-status').textContent=e.message);
 golemSettingsForm.addEventListener('submit',async e=>{e.preventDefault();try{const data={defaultView:$('#golem-default-view').value,autoRotate:$('#golem-auto-rotate').checked,nodeSize:Number($('#golem-settings-size').value)};await api('/api/golem/settings',{method:'POST',body:JSON.stringify(data)});$('#golem-settings-status').textContent='Настройки сохранены на этом компьютере. Для применения к карте обновите страницу.'}catch(err){$('#golem-settings-status').textContent=err.message}});
+
+async function refreshGolemBuildStatus(){
+ const el=document.getElementById('golem-build-status');if(!el)return;
+ try{const s=await api('/api/golem/build-status');
+ const labels={idle:'Ожидание переписки',building:'Мозг обновляется в фоне',ready:'Семантический мозг готов',error:'Ошибка построения'};
+ el.textContent=(labels[s.state]||s.state)+(s.nodes?' · нейронов: '+s.nodes:'')+(s.error?' · '+s.error:'');
+ }catch{el.textContent='Статус мозга временно недоступен'}
+}
+void refreshGolemBuildStatus();
+setInterval(refreshGolemBuildStatus,15000);
