@@ -2,3 +2,4 @@ sentence-transformers
 numpy
 scikit-learn
 umap-learn
+psycopg[binary]>=3.2,<4
