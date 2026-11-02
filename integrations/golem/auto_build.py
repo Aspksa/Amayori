@@ -45,8 +45,27 @@ def main():
         for filename in ("golem_cortex.json", "golem_vectors.npy", "metadata.json"):
             if not (stage / filename).is_file():
                 raise RuntimeError("Incomplete brain build: " + filename)
-        for filename in ("golem_vectors.npy", "golem_cortex.json", "metadata.json"):
-            os.replace(stage / filename, OUT / filename)
+        # Publish with rollback: metadata is the final commit marker.
+        names = ("golem_vectors.npy", "golem_cortex.json", "metadata.json")
+        backups = stage / "backup"
+        backups.mkdir()
+        published = []
+        try:
+            for filename in names:
+                destination = OUT / filename
+                if destination.exists():
+                    shutil.copy2(destination, backups / filename)
+                os.replace(stage / filename, destination)
+                published.append(filename)
+        except Exception:
+            for filename in reversed(published):
+                destination = OUT / filename
+                backup = backups / filename
+                if backup.exists():
+                    os.replace(backup, destination)
+                elif destination.exists():
+                    destination.unlink()
+            raise
     finally:
         shutil.rmtree(stage, ignore_errors=True)
 
