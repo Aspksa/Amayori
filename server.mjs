@@ -26,6 +26,29 @@ const server=http.createServer(async(req,res)=>{
    if(!(req.headers['content-type']||'').toLowerCase().startsWith('application/json'))return json(res,415,{error:'Ожидается application/json'});
   }
   const url=new URL(req.url,'http://localhost'),p=url.pathname;
+  if(req.method==='GET'&&p==='/api/golem/settings'){
+   const saved=await read('golem-settings.json',{defaultView:'original',autoRotate:true,nodeSize:2});
+   return json(res,200,saved);
+  }
+  if(req.method==='POST'&&p==='/api/golem/settings'){
+   const b=await body(req);
+   if(!['original','simple'].includes(b.defaultView)||typeof b.autoRotate!=='boolean'||typeof b.nodeSize!=='number'||b.nodeSize<1||b.nodeSize>5)return json(res,400,{error:'Неверные настройки 3D-мозга'});
+   await write('golem-settings.json',{defaultView:b.defaultView,autoRotate:b.autoRotate,nodeSize:b.nodeSize});
+   return json(res,200,{ok:true});
+  }
+  if(req.method==='GET'&&p==='/golem-original'){
+   const html=await fs.readFile(path.join(root,'vendor','Project_Golem','app','index.html'));
+   res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','Content-Security-Policy':"default-src 'self'; script-src 'self' 'unsafe-inline' https://unpkg.com; style-src 'self' 'unsafe-inline'; connect-src 'self' https://unpkg.com; object-src 'none'; frame-ancestors 'self'"});return res.end(html);
+  }
+  if(req.method==='GET'&&p==='/golem_cortex.json'){
+   const graph=await read('graph.json',{nodes:[],edges:[]});const cortex=await getCortex(graph);
+   return json(res,200,cortex.nodes);
+  }
+  if(req.method==='POST'&&p==='/query'){
+   const b=await body(req);if(typeof b.query!=='string'||b.query.length>500)return json(res,400,{error:'Некорректный запрос'});
+   const graph=await read('graph.json',{nodes:[],edges:[]});const cortex=await getCortex(graph);
+   return json(res,200,await queryCortex(cortex.nodes,b.query));
+  }
   if(req.method==='GET'&&p==='/api/health')return json(res,200,{ok:true,name:'Amayori',version:'0.5.0'});
   if(req.method==='GET'&&p==='/api/settings'){const s=await settings();return json(res,200,{model:s.model,endpoint:s.endpoint,hasKey:!!s.apiKey})}
   if(req.method==='POST'&&p==='/api/settings'){const b=await body(req),old=await settings();if(typeof b.model!=='string'||typeof b.endpoint!=='string')return json(res,400,{error:'Неверные настройки'});const s={model:b.model.trim().slice(0,150),endpoint:b.endpoint.trim().slice(0,500),apiKey:typeof b.apiKey==='string'&&b.apiKey.trim()?b.apiKey.trim():old.apiKey};if(s.apiKey.length>2000)return json(res,400,{error:'Слишком длинный ключ'});let u;try{u=new URL(s.endpoint)}catch{return json(res,400,{error:'Неверный адрес Cloud.ru'})}if(u.protocol!=='https:'||!(u.hostname==='cloud.ru'||u.hostname.endsWith('.cloud.ru'))||u.username||u.password)return json(res,400,{error:'Укажите HTTPS адрес Cloud.ru'});await write('cloudru-settings.json',s);return json(res,200,{ok:true})}
