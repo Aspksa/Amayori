@@ -32,7 +32,7 @@ async function semanticSearch(query){
   child.stdin.end(query);
  });
 }
-export async function queryCortex(nodes,query,mode='preview'){
+export async function queryCortex(nodes,query,mode=(nodes[0]?.cat==='Память'?'semantic':'preview')){
  if(mode==='semantic'){
   try{
    const data=await semanticSearch(query);
