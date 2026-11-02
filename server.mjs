@@ -26,6 +26,16 @@ const server=http.createServer(async(req,res)=>{
    if(!(req.headers['content-type']||'').toLowerCase().startsWith('application/json'))return json(res,415,{error:'Ожидается application/json'});
   }
   const url=new URL(req.url,'http://localhost'),p=url.pathname;
+  if(req.method==='GET'&&p==='/api/golem/settings'){
+   const saved=await read('golem-settings.json',{defaultView:'original',autoRotate:true,nodeSize:2});
+   return json(res,200,saved);
+  }
+  if(req.method==='POST'&&p==='/api/golem/settings'){
+   const b=await body(req);
+   if(!['original','simple'].includes(b.defaultView)||typeof b.autoRotate!=='boolean'||typeof b.nodeSize!=='number'||b.nodeSize<1||b.nodeSize>5)return json(res,400,{error:'Неверные настройки 3D-мозга'});
+   await write('golem-settings.json',{defaultView:b.defaultView,autoRotate:b.autoRotate,nodeSize:b.nodeSize});
+   return json(res,200,{ok:true});
+  }
   if(req.method==='GET'&&p==='/golem-original'){
    const html=await fs.readFile(path.join(root,'vendor','Project_Golem','app','index.html'));
    res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','Content-Security-Policy':"default-src 'self'; script-src 'self' 'unsafe-inline' https://unpkg.com; style-src 'self' 'unsafe-inline'; connect-src 'self' https://unpkg.com; object-src 'none'; frame-ancestors 'self'"});return res.end(html);
