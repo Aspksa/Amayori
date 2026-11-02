@@ -5,16 +5,24 @@ import {spawn} from 'node:child_process';
 import {cortexFromGraph,searchCortex} from './golem-cortex.mjs';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const folder=path.join(root,'data','golem');
+const chatsFile=path.join(root,'data','chats.json');
 const python=process.env.AMAYORI_GOLEM_PYTHON || (process.platform==='win32'?'py':'python3');
 export async function getCortex(graph){
  try{
   const [raw,metadata]=await Promise.all([fs.readFile(path.join(folder,'golem_cortex.json'),'utf8'),fs.readFile(path.join(folder,'metadata.json'),'utf8')]);
   const nodes=JSON.parse(raw),info=JSON.parse(metadata);
   if(!Array.isArray(nodes)||!nodes.every(n=>Array.isArray(n.pos)&&n.pos.length===3))throw Error('Invalid cortex');
+  const sourceStat=await fs.stat(chatsFile).catch(()=>null);
+  const cortexStat=await fs.stat(path.join(folder,'golem_cortex.json'));
+  if(info.source!=='chats.json'||(sourceStat&&sourceStat.mtimeMs>cortexStat.mtimeMs))throw Object.assign(new Error('Cortex needs rebuild'),{code:'STALE'});
   return {nodes,mode:'semantic',projection:info.projection,model:info.model};
  }catch(e){
   if(e.code!=='ENOENT')console.warn('Golem cortex fallback:',e.message);
-  return {nodes:cortexFromGraph(graph),mode:'preview',projection:'deterministic-not-UMAP'};
+  const messages=JSON.parse(await fs.readFile(chatsFile,'utf8').catch(()=> '[]'));
+  const valid=Array.isArray(messages)?messages.filter(m=>m&&['user','assistant'].includes(m.role)&&typeof m.content==='string'&&m.content.trim()).slice(-900):[];
+  const fallback=valid.map((m,i)=>({id:'preview-'+i,label:m.content.slice(0,500),count:1}));
+  const nodes=cortexFromGraph({nodes:fallback}).map((n,i)=>({...n,cat:valid[i].role==='user'?'Пользователь':'ИИ',col:valid[i].role==='user'?[.22,.74,.97]:[.69,.22,.30]}));
+  return {nodes,mode:'preview',projection:'deterministic-not-UMAP'};
  }
 }
 async function semanticSearch(query){
@@ -32,7 +40,7 @@ async function semanticSearch(query){
   child.stdin.end(query);
  });
 }
-export async function queryCortex(nodes,query,mode=(nodes[0]?.cat==='Память'?'semantic':'preview')){
+export async function queryCortex(nodes,query,mode=(nodes[0]?.id?.startsWith('chat-')?'semantic':'preview')){
  if(mode==='semantic'){
   try{
    const data=await semanticSearch(query);
