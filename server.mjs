@@ -6,7 +6,7 @@ import {read,write,recall,record} from './core/store.mjs';
 import {cloudChat,cloudModels,validateEndpoint} from './core/cloud-client.mjs';
 import {bridgeStatus,memosSearch,memosStore,graphitiIngest} from './core/bridges.mjs';
 import {getCortex,queryCortex} from './core/golem-data.mjs';
-import {startGolemBrainAutomation} from './core/golem-auto.mjs';
+import {startGolemBrainAutomation,getGolemBuildStatus} from './core/golem-auto.mjs';
 const root=path.dirname(fileURLToPath(import.meta.url));
 const host='127.0.0.1',port=Number(process.env.PORT||57474);
 const routes={'/':'index.html','/index.html':'index.html','/style.css':'style.css','/chat-avatar.js':'chat-avatar.js','/app.js':'app.js','/knowledge-map.js':'knowledge-map.js'};
@@ -58,6 +58,7 @@ const server=http.createServer(async(req,res)=>{
   if(req.method==='GET'&&p==='/api/integrations/status')return json(res,200,bridgeStatus());
   if(req.method==='GET'&&p==='/api/memory/status'){const m=await read('chats.json',[]);return json(res,200,{messages:m.length,mode:'local',memosConnected:false})}
   if(req.method==='GET'&&p==='/api/chats')return json(res,200,{messages:(await read('chats.json',[])).slice(-100)});
+  if(req.method==='GET'&&p==='/api/golem/build-status')return json(res,200,getGolemBuildStatus());
   if(req.method==='GET'&&p==='/api/golem/cortex'){const graph=await read('graph.json',{nodes:[],edges:[]});return json(res,200,await getCortex(graph))}
   if(req.method==='POST'&&p==='/api/golem/query'){const b=await body(req);if(typeof b.query!=='string'||b.query.length>500)return json(res,400,{error:'Некорректный запрос'});const cortex=await getCortex(await read('graph.json',{nodes:[],edges:[]}));return json(res,200,await queryCortex(cortex.nodes,b.query))}
   if(req.method==='GET'&&p==='/api/graph')return json(res,200,await read('graph.json',{nodes:[],edges:[]}));
