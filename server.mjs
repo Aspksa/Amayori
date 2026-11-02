@@ -17,7 +17,7 @@ const server=http.createServer(async(req,res)=>{
   const url=new URL(req.url,'http://localhost'),p=url.pathname;
   if(req.method==='GET'&&p==='/api/health')return json(res,200,{ok:true,name:'Amayori',version:'0.2.0'});
   if(req.method==='GET'&&p==='/api/settings'){const s=await settings();return json(res,200,{model:s.model,endpoint:s.endpoint,hasKey:!!s.apiKey})}
-  if(req.method==='POST'&&p==='/api/settings'){const b=await body(req),old=await settings();if(typeof b.model!=='string'||typeof b.endpoint!=='string')return json(res,400,{error:'Неверные настройки'});const s={model:b.model.trim().slice(0,150),endpoint:b.endpoint.trim().slice(0,500),apiKey:typeof b.apiKey==='string'&&b.apiKey.trim()?b.apiKey.trim():old.apiKey};if(s.apiKey.length>2000)return json(res,400,{error:'Слишком длинный ключ'});const u=new URL(s.endpoint);if(u.protocol!=='https:'||!u.hostname.endsWith('.cloud.ru'))return json(res,400,{error:'Укажите HTTPS адрес Cloud.ru'});await write('cloudru-settings.json',s);return json(res,200,{ok:true})}
+  if(req.method==='POST'&&p==='/api/settings'){const b=await body(req),old=await settings();if(typeof b.model!=='string'||typeof b.endpoint!=='string')return json(res,400,{error:'Неверные настройки'});const s={model:b.model.trim().slice(0,150),endpoint:b.endpoint.trim().slice(0,500),apiKey:typeof b.apiKey==='string'&&b.apiKey.trim()?b.apiKey.trim():old.apiKey};if(s.apiKey.length>2000)return json(res,400,{error:'Слишком длинный ключ'});let u;try{u=new URL(s.endpoint)}catch{return json(res,400,{error:'Неверный адрес Cloud.ru'})}if(u.protocol!=='https:'||!(u.hostname==='cloud.ru'||u.hostname.endsWith('.cloud.ru'))||u.username||u.password)return json(res,400,{error:'Укажите HTTPS адрес Cloud.ru'});await write('cloudru-settings.json',s);return json(res,200,{ok:true})}
   if(req.method==='POST'&&p==='/api/test-connection'){await body(req);const s=await settings();await cloudChat(s,[{role:'user',content:'Ответь одним словом: работает'}]);return json(res,200,{ok:true})}
   if(req.method==='GET'&&p==='/api/memory/status'){const m=await read('chats.json',[]);return json(res,200,{messages:m.length,mode:'local',memosConnected:false})}
   if(req.method==='GET'&&p==='/api/chats')return json(res,200,{messages:(await read('chats.json',[])).slice(-100)});
@@ -28,6 +28,6 @@ const server=http.createServer(async(req,res)=>{
   const name=routes[p];if(!name)return json(res,404,{error:'Не найдено'});
   const content=await fs.readFile(path.join(root,'public',name));
   res.writeHead(200,{'Content-Type':types[path.extname(name)],'X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; object-src 'none'; frame-ancestors 'none'"});res.end(content);
- }catch(e){console.error(e);json(res,400,{error:e.message||'Ошибка сервера'})}
+ }catch(e){console.error(e);json(res,e instanceof SyntaxError?400:500,{error:e instanceof SyntaxError?'Неверный JSON':(e.message||'Ошибка сервера')})}
 });
 server.listen(port,host,()=>console.log('Amayori ready: http://'+host+':'+port+'/'));
