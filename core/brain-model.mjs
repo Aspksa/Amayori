@@ -1,7 +1,7 @@
 import {cloudChat} from './cloud-client.mjs';
 
 // Local inference is opt-in and loopback-only; Cloud.ru remains the default.
-export function localEndpoint(raw=process.env.AMAYORI_LOCAL_ENDPOINT||'http://127.0.0.1:11434/v1/chat/completions'){
+export function localEndpoint(raw=process.env.AMAYORI_LOCAL_ENDPOINT||'http://127.0.0.1:8080/v1/chat/completions'){
  const u=new URL(raw);
  if(u.protocol!=='http:'||!['127.0.0.1','localhost','[::1]'].includes(u.hostname)||u.username||u.password||u.search||u.hash||!u.pathname.endsWith('/v1/chat/completions'))
   throw Error('Локальная модель должна использовать адрес localhost и /v1/chat/completions');
