@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "start": "node server.mjs",
-    "test": "node --test"
+    "test": "node --test",
+    "training:export": "node scripts/export-reviewed-dataset.mjs"
   },
   "dependencies": {
     "pg": "^8.13.1"
