@@ -199,3 +199,27 @@ export async function relatedFacts(id){
  const {subject,object}=selected.rows[0];
  const r=await db.query("SELECT id,subject,predicate,object,source_message_id FROM amayori_facts WHERE status='active' AND id<>$1 AND (subject=$2 OR object=$2 OR subject=$3 OR object=$3) ORDER BY id DESC LIMIT 30",[id,subject,object]);return r.rows;
 }
+
+export async function golemTraceStore(question, facts, answer){
+ const db=await ensureKnowledgeTables();if(!db)return null;
+ await db.query(`CREATE TABLE IF NOT EXISTS amayori_answer_traces(id BIGSERIAL PRIMARY KEY,question TEXT NOT NULL,answer_excerpt TEXT NOT NULL,fact_ids JSONB NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT now())`);
+ const ids=facts.map(f=>String(f.id)).filter(x=>/^[0-9]+$/.test(x));
+ const r=await db.query('INSERT INTO amayori_answer_traces(question,answer_excerpt,fact_ids) VALUES($1,$2,$3::jsonb) RETURNING id',[question.slice(0,4000),answer.slice(0,600),JSON.stringify(ids)]);return String(r.rows[0].id);
+}
+export async function golemTraces(limit=20){
+ const db=await ensureKnowledgeTables();if(!db)return [];
+ await db.query(`CREATE TABLE IF NOT EXISTS amayori_answer_traces(id BIGSERIAL PRIMARY KEY,question TEXT NOT NULL,answer_excerpt TEXT NOT NULL,fact_ids JSONB NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT now())`);
+ const r=await db.query('SELECT id,question,answer_excerpt,fact_ids,created_at FROM amayori_answer_traces ORDER BY id DESC LIMIT $1',[Math.max(1,Math.min(50,limit))]);return r.rows;
+}
+export async function golemImmuneReport(){
+ const db=await ensureKnowledgeTables();if(!db)return {duplicates:[],conflicts:[],unverified:[]};
+ const [duplicates,conflicts,unverified]=await Promise.all([
+ db.query("SELECT subject,predicate,object,COUNT(*)::int AS copies FROM amayori_facts WHERE status='active' GROUP BY subject,predicate,object HAVING COUNT(*)>1 LIMIT 30"),
+ db.query("SELECT subject,predicate,COUNT(DISTINCT object)::int AS variants FROM amayori_facts WHERE status='active' GROUP BY subject,predicate HAVING COUNT(DISTINCT object)>1 LIMIT 30"),
+ db.query("SELECT id,subject,predicate,object FROM amayori_facts WHERE status='active' AND source NOT IN ('user-confirmed') ORDER BY id DESC LIMIT 30")
+ ]);return {duplicates:duplicates.rows,conflicts:conflicts.rows,unverified:unverified.rows};
+}
+export async function golemBridges(limit=20){
+ const db=await ensureKnowledgeTables();if(!db)return [];
+ const r=await db.query("SELECT a.id AS first_id,b.id AS second_id,a.subject AS first_subject,b.subject AS second_subject,a.object AS shared_entity FROM amayori_facts a JOIN amayori_facts b ON a.object=b.object AND a.id<b.id AND a.subject<>b.subject WHERE a.status='active' AND b.status='active' ORDER BY a.id DESC LIMIT $1",[Math.max(1,Math.min(50,limit))]);return r.rows;
+}
