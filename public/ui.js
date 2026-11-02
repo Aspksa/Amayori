@@ -53,6 +53,16 @@
     fragment.append(document.createTextNode(value.slice(cursor)));
     return fragment;
   }
+  // Archive rows are single-line previews: show the words, not the Markdown
+  // markers the chat view renders as code blocks and emphasis.
+  function preview(text) {
+    return String(text)
+      .replace(/```[^\n`]*\n?/g, " ")
+      .replace(/`([^`\n]+)`/g, "$1")
+      .replace(/\*\*([^*\n]+)\*\*/g, "$1")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
   async function copy(text) {
     try {
       await navigator.clipboard.writeText(text);
@@ -72,5 +82,5 @@
           minute: "2-digit",
         });
   }
-  window.AmayoriUI = { icon, api, notify, empty, mark, copy, date };
+  window.AmayoriUI = { icon, api, notify, empty, mark, preview, copy, date };
 })();

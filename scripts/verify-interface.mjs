@@ -312,6 +312,15 @@ try {
   assert.equal(await page.locator("#floating-chat").isVisible(), false);
   await page.locator("#archive-search").fill("сад");
   assert.ok((await page.locator("#archive-list mark").count()) > 0);
+  await page.locator("#archive-search").fill("");
+  const archiveText = await page
+    .locator("#archive-list")
+    .evaluate((list) => list.textContent);
+  assert.doesNotMatch(
+    archiveText,
+    /```|\*\*/,
+    "archive previews show text, not Markdown markers",
+  );
   await page.locator("#archive-list .archive-item").first().click();
   await page.waitForURL("**/#chat");
   await page.waitForFunction(

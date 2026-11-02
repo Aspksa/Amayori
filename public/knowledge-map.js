@@ -2,6 +2,10 @@
   "use strict";
   const UI = window.AmayoriUI,
     { api, notify } = UI;
+  const caption = (value) => {
+    const text = String(value);
+    return text.length > 22 ? text.slice(0, 21).trimEnd() + "…" : text;
+  };
   const $ = (id) => document.getElementById(id),
     canvas = $("knowledge-map"),
     ctx = canvas.getContext("2d");
@@ -85,7 +89,7 @@
         ctx.font = "11px Segoe UI";
         ctx.fillStyle = active ? "#f0ddb5" : "#9e9b91";
         ctx.fillText(
-          String(point.label || point.id).slice(0, 22),
+          caption(point.label || point.id),
           point.x + 11,
           point.y + 4,
         );

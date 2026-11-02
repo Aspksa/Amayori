@@ -9,6 +9,7 @@
     "migrate:postgres": "node scripts/migrate-postgres.mjs",
     "training:export": "node scripts/export-reviewed-dataset.mjs",
     "test:syntax": "node scripts/check-syntax.mjs",
+    "tour": "node scripts/interface-tour.mjs",
     "test:ui": "node scripts/verify-interface.mjs"
   },
   "dependencies": {
