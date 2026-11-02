@@ -7,7 +7,8 @@ import {cloudChat,cloudModels,validateEndpoint} from './core/cloud-client.mjs';
 import {bridgeStatus,memosSearch,memosStore,graphitiIngest} from './core/bridges.mjs';
 import {getCortex,queryCortex} from './core/golem-data.mjs';
 import {startGolemBrainAutomation,getGolemBuildStatus} from './core/golem-auto.mjs';
-import {initDatabase,databaseStatus,saveFact,findFacts,knowledgeGraph,saveFeedback,feedbackStats,golemKnowledgePage,golemVectorStatus} from './core/postgres.mjs';
+import {cloudEmbedding} from './core/cloud-embedding.mjs';
+import {initDatabase,databaseStatus,saveFact,findFacts,knowledgeGraph,saveFeedback,feedbackStats,golemKnowledgePage,golemVectorStatus,golemFactSource,golemSimilar} from './core/postgres.mjs';
 const root=path.dirname(fileURLToPath(import.meta.url));
 const host='127.0.0.1',port=Number(process.env.PORT||57474);
 const routes={'/':'index.html','/index.html':'index.html','/style.css':'style.css','/chat-avatar.js':'chat-avatar.js','/app.js':'app.js','/knowledge-map.js':'knowledge-map.js'};
@@ -66,6 +67,8 @@ const server=http.createServer(async(req,res)=>{
   if(req.method==='GET'&&p==='/api/memory/status'){const m=await chatHistory();return json(res,200,{messages:m.length,mode:postgresCanonical()?'postgresql':'local',memosConnected:false})}
   if(req.method==='GET'&&p==='/api/chats')return json(res,200,{messages:await chatHistory(100)});
   if(req.method==='GET'&&p==='/api/golem/knowledge')return json(res,200,await golemKnowledgePage({q:url.searchParams.get('q')||'',limit:url.searchParams.get('limit'),offset:url.searchParams.get('offset')}));
+  if(req.method==='GET'&&p==='/api/golem/source'){const id=url.searchParams.get('id');if(!/^[1-9]\\d{0,15}$/.test(id||''))return json(res,400,{error:'Некорректный ID факта'});const source=await golemFactSource(id);return json(res,source?200:404,source||{error:'Источник не найден'});}
+  if(req.method==='POST'&&p==='/api/golem/similar'){const b=await body(req);if(typeof b.text!=='string'||!b.text.trim()||b.text.length>1000)return json(res,400,{error:'Введите запрос до 1000 символов'});const s=await settings();const model=process.env.AMAYORI_EMBEDDING_MODEL;if(!model)return json(res,409,{error:'Укажите AMAYORI_EMBEDDING_MODEL (модель Cloud.ru с размерностью 384)'});const embedding=await cloudEmbedding(s,b.text,model);return json(res,200,{results:await golemSimilar(embedding),model});}
   if(req.method==='GET'&&p==='/api/golem/diagnostics'){const started=Date.now();const [graph,vector]=await Promise.all([golemKnowledgePage({limit:1}),golemVectorStatus()]);return json(res,200,{source:graph.source,facts:graph.total,vector,queryMs:Date.now()-started,localModel:false})}
   if(req.method==='GET'&&p==='/api/golem/build-status')return json(res,200,getGolemBuildStatus());
   if(req.method==='GET'&&p==='/api/golem/cortex'){const graph=await read('graph.json',{nodes:[],edges:[]});return json(res,200,await getCortex(graph))}

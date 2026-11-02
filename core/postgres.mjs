@@ -154,3 +154,11 @@ export async function golemVectorStatus(){
  const r=await db.query('SELECT COUNT(*)::int AS n FROM amayori_memories WHERE embedding IS NOT NULL');
  return {enabled:true,indexed:r.rows[0].n,dimensions:384};
 }
+
+export async function golemFactSource(id){
+ const db=await ensureKnowledgeTables();if(!db)return null;
+ const r=await db.query('SELECT id,subject,predicate,object,source,confidence,status,created_at FROM amayori_facts WHERE id=$1',[id]);return r.rows[0]||null;
+}
+export async function golemSimilar(embedding,limit=8){
+ return searchMemory(embedding,limit);
+}
