@@ -63,9 +63,9 @@ export async function appendCanonicalExchange(user,assistant){
  const db=await ensureCanonicalTable(),client=await db.connect();
  try{
   await client.query('BEGIN');
-  await client.query('INSERT INTO amayori_chat_log(role,content) VALUES($1,$2)', ['user',user]);
+  const userRow=await client.query('INSERT INTO amayori_chat_log(role,content) VALUES($1,$2) RETURNING id', ['user',user]);
   await client.query('INSERT INTO amayori_chat_log(role,content) VALUES($1,$2)', ['assistant',assistant]);
-  await client.query('COMMIT');
+  await client.query('COMMIT');return Number(userRow.rows[0].id);
  }catch(e){await client.query('ROLLBACK');throw e}finally{client.release()}
 }
 export async function importCanonicalChats(messages){
@@ -183,4 +183,19 @@ export async function embeddingProgress(){
  const db=await ensureCanonicalTable();await initDatabase();
  const r=await db.query('SELECT (SELECT COUNT(*)::int FROM amayori_chat_log) AS total,(SELECT COUNT(*)::int FROM amayori_memories WHERE chat_message_id IS NOT NULL AND embedding IS NOT NULL) AS indexed');
  return r.rows[0];
+}
+
+export async function recentUserMessageId(){
+ const db=await ensureCanonicalTable();const r=await db.query("SELECT id FROM amayori_chat_log WHERE role='user' ORDER BY id DESC LIMIT 1");return r.rows[0]?Number(r.rows[0].id):null;
+}
+export async function knowledgeConflicts(limit=50){
+ const db=await ensureKnowledgeTables();if(!db)return [];
+ const r=await db.query("SELECT old.id,old.subject,old.predicate,old.object AS previous,new.object AS current,new.id AS replacement_id,old.source_message_id AS previous_message_id,new.source_message_id AS current_message_id FROM amayori_facts old JOIN amayori_facts new ON old.superseded_by=new.id WHERE old.status='superseded' ORDER BY new.id DESC LIMIT $1",[Math.max(1,Math.min(100,limit))]);
+ return r.rows;
+}
+export async function relatedFacts(id){
+ const db=await ensureKnowledgeTables();if(!db)return [];
+ const selected=await db.query('SELECT subject,object FROM amayori_facts WHERE id=$1',[id]);if(!selected.rows.length)return [];
+ const {subject,object}=selected.rows[0];
+ const r=await db.query("SELECT id,subject,predicate,object,source_message_id FROM amayori_facts WHERE status='active' AND id<>$1 AND (subject=$2 OR object=$2 OR subject=$3 OR object=$3) ORDER BY id DESC LIMIT 30",[id,subject,object]);return r.rows;
 }
