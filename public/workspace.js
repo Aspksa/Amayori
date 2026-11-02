@@ -270,9 +270,15 @@
       return layout;
     },
   };
-  $("workspace-toggle").addEventListener("click", () =>
-    updateSplit({ enabled: !prefs.split.enabled }),
-  );
+  $("workspace-toggle").addEventListener("click", () => {
+    const target =
+      UI.state.page === "graph"
+        ? "graph"
+        : UI.state.page === "memory"
+          ? "archive"
+          : prefs.split.target;
+    updateSplit({ enabled: !prefs.split.enabled, target });
+  });
   $("workspace-enabled").addEventListener("change", (event) =>
     updateSplit({ enabled: event.target.checked }),
   );

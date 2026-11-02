@@ -832,6 +832,14 @@ try {
   assert.equal(await work.locator("#view-memory").isVisible(), true);
   assert.equal(await otherWork.locator("#view-graph").isVisible(), true);
   await otherWork.close();
+  // Enabling split on a full-screen map remembers that current context.
+  await work.locator("#workspace-toggle").click();
+  await work.locator('a.nav-link[data-page="graph"]').click();
+  await work.locator("#view-graph").waitFor();
+  await work.locator("#workspace-toggle").click();
+  await work.locator('a.nav-link[data-page="chat"]').click();
+  await work.locator("#view-graph").waitFor();
+  assert.equal(await work.locator("#workspace-context").inputValue(), "graph");
   await work.locator("#chat-input").fill("Сохранить при переходах");
   await work.locator('a.nav-link[data-page="graph"]').click();
   await work.locator("#view-graph").waitFor({ state: "visible" });
