@@ -1,0 +1,19 @@
+name: Runner diagnostic
+on:
+  push:
+    branches: [ci/runner-diagnostic]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  ubuntu-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - run: echo Ubuntu runner allocated
+  windows-smoke:
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - shell: pwsh
+        run: Write-Output 'Windows runner allocated'
