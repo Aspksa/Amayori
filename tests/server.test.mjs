@@ -14,6 +14,8 @@ test('local server responds to health and rejects unsafe requests',async()=>{
   const js=await fetch(base+'/knowledge-map.js');assert.equal(js.status,200);
   const missing=await fetch(base+'/not-found');assert.equal(missing.status,404);
   const bad=await fetch(base+'/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:''})});assert.equal(bad.status,400);
+  const blocked=await fetch(base+'/api/chat',{method:'POST',headers:{'Content-Type':'application/json','Origin':'https://evil.example'},body:'{}'});assert.equal(blocked.status,403);
+  const invalidType=await fetch(base+'/api/chat',{method:'POST',headers:{'Content-Type':'text/plain'},body:'{}'});assert.equal(invalidType.status,415);
   const settings=await fetch(base+'/api/settings');assert.equal(settings.status,200);assert.equal(Object.hasOwn(await settings.json(),'apiKey'),false);
  }finally{child.kill()}
 });
