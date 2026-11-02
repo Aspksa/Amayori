@@ -9,5 +9,5 @@ test('Cloud.ru model list uses metadata.name and works with bearer key',async t=
   return {ok:true,json:async()=>({data:[{id:'ai-sage/example',metadata:{name:'Пример модели'}}]})};
  };
  t.after(()=>{globalThis.fetch=previous});
- assert.deepEqual(await cloudModels({apiKey:'local-test'}),[{id:'ai-sage/example',name:'Пример модели'}]);
+ assert.deepEqual(await cloudModels({apiKey:'local-test'}),[{id:'ai-sage/example',name:'Пример модели',type:'unknown'}]);
 });
