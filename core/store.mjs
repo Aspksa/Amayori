@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-const dir=path.resolve('data');
+import {fileURLToPath} from 'node:url';
+const dir=path.join(path.dirname(fileURLToPath(import.meta.url)),'..','data');
 const file=name=>path.join(dir,name);
 export async function read(name,fallback){try{return JSON.parse(await fs.readFile(file(name),'utf8'))}catch(e){if(e.code==='ENOENT')return fallback;throw e}}
 export async function write(name,data){await fs.mkdir(dir,{recursive:true});const dest=file(name),temp=dest+'.tmp';await fs.writeFile(temp,JSON.stringify(data,null,2),'utf8');await fs.rename(temp,dest)}
