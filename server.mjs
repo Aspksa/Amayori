@@ -6,6 +6,7 @@ import {read,write,recall,record} from './core/store.mjs';
 import {cloudChat,cloudModels,validateEndpoint} from './core/cloud-client.mjs';
 import {bridgeStatus,memosSearch,memosStore,graphitiIngest} from './core/bridges.mjs';
 import {getCortex,queryCortex} from './core/golem-data.mjs';
+import {startGolemBrainAutomation} from './core/golem-auto.mjs';
 const root=path.dirname(fileURLToPath(import.meta.url));
 const host='127.0.0.1',port=Number(process.env.PORT||57474);
 const routes={'/':'index.html','/index.html':'index.html','/style.css':'style.css','/chat-avatar.js':'chat-avatar.js','/app.js':'app.js','/knowledge-map.js':'knowledge-map.js'};
@@ -67,4 +68,4 @@ const server=http.createServer(async(req,res)=>{
   res.writeHead(200,{'Content-Type':types[path.extname(name)],'X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; object-src 'none'; frame-ancestors 'none'"});res.end(content);
  }catch(e){console.error(e);json(res,e instanceof SyntaxError?400:500,{error:e instanceof SyntaxError?'Неверный JSON':(e.message||'Ошибка сервера')})}
 });
-server.listen(port,host,()=>console.log('Amayori ready: http://'+host+':'+port+'/'));
+server.listen(port,host,()=>{console.log('Amayori ready: http://'+host+':'+port+'/');startGolemBrainAutomation()});
