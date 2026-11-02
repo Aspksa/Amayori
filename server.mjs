@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {read,write,record,chatHistory,postgresCanonical,refreshGolemSnapshot} from './core/store.mjs';
-import {cloudChat,cloudModels,validateEndpoint} from './core/cloud-client.mjs';
+import {cloudChat,cloudModels} from './core/cloud-client.mjs';
 import {bridgeStatus,memosStore,graphitiIngest} from './core/bridges.mjs';
 import {getCortex,queryCortex} from './core/golem-data.mjs';
 import {startGolemBrainAutomation,getGolemBuildStatus} from './core/golem-auto.mjs';
@@ -11,7 +11,7 @@ import {cloudEmbedding} from './core/cloud-embedding.mjs';
 import {collectChatMemory} from './core/chat-memory.mjs';
 import {extractKnowledge} from './core/knowledge-extractor.mjs';
 import {runEmbeddingBatch,embeddingJobStatus} from './core/embedding-worker.mjs';
-import {initDatabase,databaseStatus,saveFact,findFacts,knowledgeGraph,saveFeedback,feedbackStats,golemKnowledgePage,golemVectorStatus,golemFactSource,golemSimilar,embeddingProgress,recentUserMessageId,knowledgeConflicts,relatedFacts,golemTraceStore,golemTraces,golemImmuneReport,golemBridges} from './core/postgres.mjs';
+import {initDatabase,databaseStatus,saveFact,findFacts,knowledgeGraph,saveFeedback,feedbackStats,golemKnowledgePage,golemVectorStatus,golemFactSource,golemSimilar,embeddingProgress,knowledgeConflicts,relatedFacts,golemTraceStore,golemTraces,golemImmuneReport,golemBridges} from './core/postgres.mjs';
 const root=path.dirname(fileURLToPath(import.meta.url));
 const packageInfo=JSON.parse(await fs.readFile(path.join(root,'package.json'),'utf8'));
 const host='127.0.0.1',port=Number(process.env.PORT||57474);
@@ -65,8 +65,8 @@ const server=http.createServer(async(req,res)=>{
   if(req.method==='GET'&&p==='/api/knowledge/related'){const id=url.searchParams.get('id');if(!/^[1-9][0-9]{0,15}$/.test(id||''))return json(res,400,{error:'Некорректный ID факта'});return json(res,200,{facts:await relatedFacts(id)});}
   if(req.method==='POST'&&p==='/api/knowledge/extract'){const b=await body(req);if(typeof b.text!=='string'||!b.text.trim()||b.text.length>4000)return json(res,400,{error:'Текст должен содержать от 1 до 4000 символов'});if(!postgresCanonical())return json(res,409,{error:'Для сохранения знаний необходим PostgreSQL'});const config=await settings();const facts=await extractKnowledge(config,b.text);const sourceMessageId=Number.isSafeInteger(b.sourceMessageId)&&b.sourceMessageId>0?b.sourceMessageId:null;const saved=[];for(const fact of facts)saved.push({...fact,...await saveFact({...fact,source:'cloudru-extracted',sourceMessageId})});return json(res,200,{facts:saved});}
   if(req.method==='GET'&&p==='/api/knowledge/graph')return json(res,200,await knowledgeGraph());
-  if(req.method==='POST'&&p==='/api/knowledge/facts'){const b=await body(req);return json(res,200,await saveFact(b))}
-  if(req.method==='POST'&&p==='/api/feedback'){const b=await body(req);return json(res,200,await saveFeedback(b))}
+  if(req.method==='POST'&&p==='/api/knowledge/facts'){const b=await body(req);if(!postgresCanonical())return json(res,409,{error:'Для сохранения знаний необходим PostgreSQL'});return json(res,200,await saveFact(b))}
+  if(req.method==='POST'&&p==='/api/feedback'){const b=await body(req);if(!postgresCanonical())return json(res,409,{error:'Для оценок ответов необходим PostgreSQL'});return json(res,200,await saveFeedback(b))}
   if(req.method==='GET'&&p==='/api/feedback/stats')return json(res,200,await feedbackStats());
   if(req.method==='GET'&&p==='/api/database/status')return json(res,200,await databaseStatus());
   if(req.method==='GET'&&p==='/api/health')return json(res,200,{ok:true,name:'Amayori',version:packageInfo.version});

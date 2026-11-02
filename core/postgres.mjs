@@ -1,6 +1,8 @@
 import {createRequire} from 'node:module';
 const require=createRequire(import.meta.url);
 let pool;
+/** Vector width of the pgvector schema. Changing it requires a schema migration. */
+export const EMBEDDING_DIMENSIONS=384;
 const enabled=()=>Boolean(process.env.AMAYORI_DATABASE_URL);
 export async function database(){
  if(!enabled())return null;
@@ -17,7 +19,7 @@ export async function initDatabase(){
  role TEXT NOT NULL CHECK(role IN ('user','assistant')),
  content TEXT NOT NULL,
  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
- embedding vector(384),
+ embedding vector(${EMBEDDING_DIMENSIONS}),
  chat_message_id BIGINT UNIQUE
  )`);
  await db.query('ALTER TABLE amayori_memories ADD COLUMN IF NOT EXISTS chat_message_id BIGINT UNIQUE');
@@ -26,12 +28,12 @@ export async function initDatabase(){
 }
 export async function insertMemory(role,content,embedding=null){
  if(!['user','assistant'].includes(role)||typeof content!=='string')throw Error('Invalid memory');
- if(embedding!==null&&(!Array.isArray(embedding)||embedding.length!==384||!embedding.every(Number.isFinite)))throw Error('Embedding must contain 384 finite numbers');
+ if(embedding!==null&&(!Array.isArray(embedding)||embedding.length!==EMBEDDING_DIMENSIONS||!embedding.every(Number.isFinite)))throw Error('Embedding must contain '+EMBEDDING_DIMENSIONS+' finite numbers');
  const db=await database();if(!db)return;
  await db.query('INSERT INTO amayori_memories(role,content,embedding) VALUES($1,$2,$3::vector)',[role,content,embedding===null?null:'['+embedding.join(',')+']']);
 }
 export async function searchMemory(embedding,limit=5){
- if(!Array.isArray(embedding)||embedding.length!==384||!embedding.every(Number.isFinite))throw Error('Invalid embedding');
+ if(!Array.isArray(embedding)||embedding.length!==EMBEDDING_DIMENSIONS||!embedding.every(Number.isFinite))throw Error('Invalid embedding');
  const db=await database();if(!db)return [];
  const vector='['+embedding.join(',')+']';
  const result=await db.query('SELECT id,role,content,created_at,embedding <=> $1::vector AS distance FROM amayori_memories WHERE embedding IS NOT NULL ORDER BY embedding <=> $1::vector LIMIT $2',[vector,Math.max(1,Math.min(20,limit))]);
@@ -143,9 +145,10 @@ export async function feedbackStats(){
 export async function golemKnowledgePage({q='',limit=150,offset=0}={}){
  const db=await ensureKnowledgeTables();if(!db)return {nodes:[],edges:[],total:0,source:'postgresql-unavailable'};
  const size=Math.max(1,Math.min(300,Number(limit)||150)),skip=Math.max(0,Math.min(1000000,Number(offset)||0));
- const term=String(q).slice(0,150);
- const count=await db.query("SELECT COUNT(*)::int AS n FROM amayori_facts WHERE status='active' AND ($1='' OR subject ILIKE '%'||$1||'%' OR predicate ILIKE '%'||$1||'%' OR object ILIKE '%'||$1||'%')",[term]);
- const result=await db.query("SELECT id,subject,predicate,object,source,confidence,created_at FROM amayori_facts WHERE status='active' AND ($1='' OR subject ILIKE '%'||$1||'%' OR predicate ILIKE '%'||$1||'%' OR object ILIKE '%'||$1||'%') ORDER BY id DESC LIMIT $2 OFFSET $3",[term,size,skip]);
+ const term=String(q).slice(0,150).replace(/[\\%_]/g,'\\$&');
+ const filter="($1='' OR subject ILIKE '%'||$1||'%' ESCAPE '\\' OR predicate ILIKE '%'||$1||'%' ESCAPE '\\' OR object ILIKE '%'||$1||'%' ESCAPE '\\')";
+ const count=await db.query("SELECT COUNT(*)::int AS n FROM amayori_facts WHERE status='active' AND "+filter,[term]);
+ const result=await db.query("SELECT id,subject,predicate,object,source,confidence,created_at FROM amayori_facts WHERE status='active' AND "+filter+" ORDER BY id DESC LIMIT $2 OFFSET $3",[term,size,skip]);
  const nodes=new Map(),edges=[];
  for(const row of result.rows){
   for(const name of [row.subject,row.object])if(!nodes.has(name))nodes.set(name,{id:name,label:name,category:'fact'});
@@ -156,7 +159,7 @@ export async function golemKnowledgePage({q='',limit=150,offset=0}={}){
 export async function golemVectorStatus(){
  const db=await database();if(!db)return {enabled:false,indexed:0};
  const r=await db.query('SELECT COUNT(*)::int AS n FROM amayori_memories WHERE embedding IS NOT NULL');
- return {enabled:true,indexed:r.rows[0].n,dimensions:384};
+ return {enabled:true,indexed:r.rows[0].n,dimensions:EMBEDDING_DIMENSIONS};
 }
 
 export async function golemFactSource(id){
@@ -176,7 +179,7 @@ export async function pendingChatEmbeddings(limit=5){
  return r.rows;
 }
 export async function storeChatEmbedding(message,embedding){
- if(!Array.isArray(embedding)||embedding.length!==384||!embedding.every(Number.isFinite))throw Error('Invalid embedding');
+ if(!Array.isArray(embedding)||embedding.length!==EMBEDDING_DIMENSIONS||!embedding.every(Number.isFinite))throw Error('Invalid embedding');
  const db=await database();await db.query('INSERT INTO amayori_memories(chat_message_id,role,content,embedding) VALUES($1,$2,$3,$4::vector) ON CONFLICT (chat_message_id) DO NOTHING',[message.id,message.role,message.content,'['+embedding.join(',')+']']);
 }
 export async function embeddingProgress(){

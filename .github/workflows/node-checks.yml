@@ -35,7 +35,6 @@ jobs:
 
       - run: node --check public/golem-immersive.js
       - run: node --check public/golem-fallback.js
-      - run: node --check public/knowledge-map.js
 
       - run: node --check core/chat-memory.mjs
       - run: node --check public/golem-state.js
