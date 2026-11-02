@@ -8,7 +8,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 DATA = ROOT / "data"
-OUT = DATA / "golem"
+OUT = Path(os.environ.get("AMAYORI_GOLEM_OUTPUT", str(DATA / "golem")))
 MODEL = os.environ.get("AMAYORI_GOLEM_MODEL", "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
 
 def build():
