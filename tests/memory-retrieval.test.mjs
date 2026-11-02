@@ -7,7 +7,7 @@ test('matches user memories, not assistant responses, and ranks relevant items',
  {role:'user',content:'У Subaru Impreza обломилась передняя шпилька колеса',at:'2026-10-30T00:00:00Z'},
  {role:'assistant',content:'Subaru Impreza обломилась передняя шпилька колеса',at:'2026-11-01T00:00:00Z'},
  {role:'user',content:'Обсуждали граф памяти и настройки',at:'2026-11-01T00:00:00Z'}];
- const result=rankMemories('Subaru Impreza шпилька',{...rows}.length?rows:[],{now});
+ const result=rankMemories('Subaru Impreza шпилька',rows,{now});
  assert.equal(result.length,1);
  assert.match(result[0].content,/Subaru/);
 });
