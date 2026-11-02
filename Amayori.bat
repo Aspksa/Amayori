@@ -21,7 +21,7 @@ if errorlevel 2 (echo [ERROR] Node.js 22 or newer is required.& pause& exit /b 1
 if errorlevel 1 (
  where npm.cmd >nul 2>&1 || (echo [ERROR] npm.cmd is missing. Reinstall Node.js LTS.& pause& exit /b 1)
  echo [INFO] Installing required packages. Internet is needed on the first run.
- call npm.cmd ci --ignore-scripts --no-audit --no-fund
+ call npm.cmd ci --omit=dev --ignore-scripts --no-audit --no-fund
  if errorlevel 1 (echo [ERROR] Package installation failed. Check the internet connection and retry.& pause& exit /b 1)
  node.exe scripts\check-dependencies.mjs
  if errorlevel 1 (echo [ERROR] Dependencies are incomplete. Check the installation output.& pause& exit /b 1)

@@ -1,0 +1,642 @@
+// Runs against an isolated, empty project copy. Cloud requests are mocked.
+import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import path from "node:path";
+import os from "node:os";
+import net from "node:net";
+import { spawn } from "node:child_process";
+import { setTimeout as delay } from "node:timers/promises";
+import { fileURLToPath } from "node:url";
+import { chromium } from "playwright";
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const temp = await fs.mkdtemp(path.join(os.tmpdir(), "amayori-interface-"));
+let browser, server;
+const checks = [];
+try {
+  for (const name of ["public", "core", "server.mjs", "package.json"])
+    await fs.cp(path.join(root, name), path.join(temp, name), {
+      recursive: true,
+    });
+  await fs.symlink(
+    path.join(root, "node_modules"),
+    path.join(temp, "node_modules"),
+    process.platform === "win32" ? "junction" : "dir",
+  );
+  const socket = net.createServer();
+  await new Promise((resolve) => socket.listen(0, "127.0.0.1", resolve));
+  const port = socket.address().port;
+  await new Promise((resolve) => socket.close(resolve));
+  const base = "http://127.0.0.1:" + port;
+  server = spawn(process.execPath, ["server.mjs"], {
+    cwd: temp,
+    env: {
+      ...process.env,
+      PORT: String(port),
+      AMAYORI_GOLEM_AUTO_BUILD: "0",
+      AMAYORI_DATABASE_URL: "",
+      AMAYORI_MEMOS_BRIDGE_URL: "",
+      AMAYORI_GRAPHITI_BRIDGE_URL: "",
+      AMAYORI_EMBEDDING_MODEL: "",
+    },
+    stdio: "ignore",
+  });
+  let ready = false;
+  for (let i = 0; i < 60; i++) {
+    try {
+      if ((await fetch(base + "/api/health")).ok) {
+        ready = true;
+        break;
+      }
+    } catch {}
+    await delay(100);
+  }
+  assert.ok(ready, "isolated server starts");
+  const args = process.env.AMAYORI_UI_BROWSER_ARGS
+    ? JSON.parse(process.env.AMAYORI_UI_BROWSER_ARGS)
+    : [];
+  browser = await chromium.launch({
+    headless: true,
+    args,
+    executablePath: process.env.AMAYORI_UI_BROWSER_EXECUTABLE || undefined,
+  });
+  const context = await browser.newContext({
+    viewport: { width: 1440, height: 950 },
+    timezoneId: "Asia/Vladivostok",
+  });
+  const page = await context.newPage(),
+    errors = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.goto(base);
+  await page.waitForSelector(".chat-empty");
+  assert.equal(await page.locator("#floating-chat").count(), 1);
+  assert.equal(await page.locator("#chat-avatar").isVisible(), false);
+  assert.equal(await page.locator("#chat-connection-hint").isVisible(), true);
+  assert.equal(await page.locator("#golem-webgl").count(), 0);
+  checks.push(
+    "Empty local mode has one chat, a connection hint and no embedded Golem",
+  );
+
+  const messages = [
+    {
+      role: "user",
+      content: "Помоги продумать сад.",
+      at: "2026-11-02T01:00:00Z",
+    },
+    {
+      role: "assistant",
+      content:
+        'Начнём с **плана** и дорожек.\n\nПример: `garden`.\n```js\nconst garden = "тихое место";\n```',
+      at: "2026-11-02T01:00:01Z",
+    },
+    {
+      role: "user",
+      content: '<img src=x onerror="window.injected=true">',
+      at: "2026-11-02T02:00:00Z",
+    },
+    {
+      role: "assistant",
+      content: "Это текст, который должен остаться текстом.",
+      at: "2026-11-02T02:00:01Z",
+    },
+  ];
+  const graph = {
+    nodes: [
+      { id: "сад", label: "сад", count: 4 },
+      { id: "дорожки", label: "дорожки", count: 2 },
+      { id: "деревья", label: "деревья", count: 3 },
+    ],
+    edges: [
+      { id: "сад|дорожки", source: "сад", target: "дорожки" },
+      { id: "сад|деревья", source: "сад", target: "деревья" },
+    ],
+  };
+  const facts = [
+    {
+      id: 1,
+      subject: "Сад",
+      predicate: "стиль",
+      object: "Природный",
+      source: "user-confirmed",
+    },
+    {
+      id: 2,
+      subject: "Сад",
+      predicate: "зона",
+      object: "Отдых",
+      source: "cloudru-extracted",
+    },
+  ];
+  let settings = { model: "test-model", hasKey: true },
+    brain = { defaultView: "original", autoRotate: true, nodeSize: 2 },
+    calls = 0;
+  const mockRoute = async (route) => {
+    const url = new URL(route.request().url()),
+      p = url.pathname,
+      method = route.request().method();
+    let data;
+    if (p === "/api/settings") {
+      if (method === "POST") {
+        const body = route.request().postDataJSON();
+        settings = {
+          model: body.model,
+          hasKey: settings.hasKey || !!body.apiKey,
+        };
+        data = { ok: true };
+      } else data = settings;
+    } else if (p === "/api/models")
+      data = {
+        models: [
+          { id: "test-model", name: "Тестовая модель", type: "llm" },
+          { id: "second-model", name: "Другая модель", type: "llm" },
+          { id: "second-model", name: "Другая модель", type: "llm" },
+        ],
+      };
+    else if (p === "/api/chats") data = { messages };
+    else if (p === "/api/memory/status")
+      data = { messages: messages.length, mode: "local" };
+    else if (p === "/api/database/status")
+      data = { enabled: false, connected: false };
+    else if (p === "/api/golem/embedding-status")
+      data = { configured: false, total: 0, indexed: 0 };
+    else if (p === "/api/graph") data = graph;
+    else if (p === "/api/golem/knowledge")
+      data = {
+        nodes: [],
+        edges: [],
+        total: 0,
+        source: "postgresql-unavailable",
+      };
+    else if (p === "/api/knowledge/facts") data = { facts };
+    else if (p === "/api/knowledge/related") data = { facts: [facts[1]] };
+    else if (p === "/api/golem/immunity")
+      data = { duplicates: [], conflicts: [], unverified: [facts[1]] };
+    else if (p === "/api/knowledge/conflicts")
+      data = {
+        conflicts: [
+          {
+            subject: "Сад",
+            predicate: "стиль",
+            previous: "Регулярный",
+            current: "Природный",
+          },
+        ],
+      };
+    else if (p === "/api/golem/bridges") data = { suggestions: [] };
+    else if (p === "/api/golem/traces")
+      data = {
+        traces: [{ question: "Как устроен сад?", fact_ids: ["1", "2"] }],
+      };
+    else if (p === "/api/golem/build-status")
+      data = { state: "idle", nodes: 0 };
+    else if (p === "/api/golem/settings") {
+      if (method === "POST") {
+        brain = route.request().postDataJSON();
+        data = { ok: true };
+      } else data = brain;
+    } else if (p === "/api/test-connection") data = { ok: true };
+    else if (p === "/api/chat") {
+      calls++;
+      const body = route.request().postDataJSON();
+      await delay(150);
+      messages.push(
+        { role: "user", content: body.message, at: new Date().toISOString() },
+        {
+          role: "assistant",
+          content: "Готово. **План** сохранён в разговоре.",
+          at: new Date().toISOString(),
+        },
+      );
+      data = {
+        answer: messages.at(-1).content,
+        model: body.model || settings.model,
+        usedFactIds: [],
+      };
+    } else if (p === "/api/golem/index-batch") data = { configured: false };
+    else if (p === "/api/golem/similar")
+      data = { results: [{ content: "План сада и дорожек", distance: 0.1 }] };
+    else
+      return route.fulfill({
+        status: 404,
+        json: { error: "Unexpected mock endpoint: " + p },
+      });
+    await route.fulfill({ json: data });
+  };
+  await page.route("**/api/**", mockRoute);
+  await page.reload();
+  await page.waitForFunction(
+    () => document.querySelectorAll(".message").length === 4,
+  );
+  assert.equal(
+    await page.locator("#chat-model option").count(),
+    2,
+    "default and duplicate models occur only once",
+  );
+  assert.equal(await page.locator(".message-body img").count(), 0);
+  assert.equal(await page.evaluate(() => window.injected), undefined);
+  assert.equal(await page.locator(".code-block").count(), 1);
+  assert.equal(await page.locator(".message-body strong").count(), 1);
+  checks.push(
+    "Model choices are unique; message HTML is escaped; code and emphasis render safely",
+  );
+
+  await page.locator("#chat-input").fill("Новый шаг плана");
+  await page.evaluate(() => {
+    const form = document.getElementById("chat-form");
+    form.requestSubmit();
+    form.requestSubmit();
+  });
+  await page.waitForFunction(
+    () =>
+      document.querySelectorAll(".message").length === 6 &&
+      !document.querySelector(".message.pending"),
+  );
+  assert.equal(calls, 1, "repeated submit sends only one request");
+  assert.equal(
+    await page
+      .locator(".message.user")
+      .filter({ hasText: "Новый шаг плана" })
+      .count(),
+    1,
+  );
+  await page.locator("#chat-find").click();
+  await page.locator("#chat-search").fill("дорожек");
+  assert.equal(await page.locator(".message:visible").count(), 1);
+  assert.ok((await page.locator(".message mark").count()) > 0);
+  await page.locator("#chat-search-close").click();
+  await page
+    .locator("#chat-input")
+    .fill("Черновик\nВторая строка\nТретья строка\nЧетвёртая строка");
+  const draft = await page.locator("#chat-input").inputValue();
+  assert.ok(
+    (await page
+      .locator("#chat-input")
+      .evaluate((el) => el.getBoundingClientRect().height)) > 65,
+  );
+  checks.push(
+    "Double submit is blocked, search highlights matches, composer grows with the draft",
+  );
+
+  await page.locator("a.nav-link[data-page=memory]").click();
+  await page.waitForURL("**/#memory");
+  await page.locator("#chat-avatar").waitFor({ state: "visible" });
+  assert.equal(await page.locator("#chat-avatar").isVisible(), true);
+  await page.locator("#chat-avatar").click();
+  assert.equal(await page.locator("#floating-chat").count(), 1);
+  assert.equal(await page.locator("#floating-chat.floating").isVisible(), true);
+  assert.equal(await page.locator("#chat-input").inputValue(), draft);
+  await page.locator("#chat-expand").click();
+  assert.equal(await page.locator("#floating-chat.expanded").isVisible(), true);
+  await page.keyboard.press("Escape");
+  assert.equal(await page.locator("#floating-chat").isVisible(), false);
+  await page.locator("#archive-search").fill("сад");
+  assert.ok((await page.locator("#archive-list mark").count()) > 0);
+  await page.locator("#archive-list .archive-item").first().click();
+  await page.waitForURL("**/#chat");
+  await page.waitForFunction(
+    () => document.documentElement.dataset.page === "chat",
+  );
+  assert.equal(await page.locator("#floating-chat.floating").count(), 0);
+  assert.equal(await page.locator("#chat-avatar").isVisible(), false);
+  assert.equal(await page.locator("#chat-input").inputValue(), draft);
+  checks.push(
+    "Avatar reuses the same conversation; draft survives navigation, floating mode and expansion",
+  );
+
+  await page.locator("a.nav-link[data-page=graph]").click();
+  await page.waitForSelector('#graph-count:text("3 узлов")');
+  await page.locator("#golem-search").fill("деревья");
+  await page
+    .locator("#graph-search-form")
+    .evaluate((form) => form.requestSubmit());
+  await page.waitForFunction(() =>
+    document.getElementById("graph-count").textContent.startsWith("2 узлов"),
+  );
+  await page.locator("#graph-reset").click();
+  await page.waitForFunction(() =>
+    document.getElementById("graph-count").textContent.startsWith("3 узлов"),
+  );
+  await page.locator("#knowledge-map").focus();
+  await page.keyboard.press("ArrowRight");
+  assert.notEqual(
+    await page.locator("#golem-selected").textContent(),
+    "Выберите узел",
+  );
+  checks.push(
+    "Local knowledge graph supports search, reset and keyboard selection",
+  );
+
+  await page.locator("a.nav-link[data-page=memory]").click();
+  await page.locator("#tab-facts").click();
+  await page.waitForSelector(".fact-card");
+  await page.locator(".fact-card .text-button").first().click();
+  await page.waitForSelector(".fact-related");
+  await page.locator("#tab-quality").click();
+  await page.waitForSelector(".quality-card");
+  assert.deepEqual(
+    await page.locator(".quality-card>strong").allTextContents(),
+    ["1", "0", "1"],
+  );
+  checks.push(
+    "Facts, related knowledge and quality reports display readable results",
+  );
+
+  await page.locator("a.nav-link[data-page=settings]").click();
+  await page.locator("#api-key").fill("demo-test-key");
+  await page.locator("#toggle-key").click();
+  assert.equal(await page.locator("#api-key").getAttribute("type"), "text");
+  await page.locator("#settings-form button[type=submit]").click();
+  await page.waitForFunction(
+    () => document.getElementById("api-key").value === "",
+  );
+  assert.equal(await page.locator("#api-key").getAttribute("type"), "password");
+  await page.locator("#test-connection").click();
+  await page.waitForFunction(
+    () => document.getElementById("connection-badge").dataset.state === "ready",
+  );
+  await page.locator("#tab-brain").click();
+  await page.locator("#golem-auto-rotate").uncheck();
+  await page.locator("#golem-settings-size").focus();
+  await page.keyboard.press("End");
+  await page.keyboard.press("ArrowLeft");
+  await page.keyboard.press("ArrowLeft");
+  await page.locator("#golem-settings-form button[type=submit]").click();
+  await page.waitForFunction(
+    () =>
+      document.getElementById("golem-settings-status").textContent.length > 0,
+  );
+  assert.equal(brain.autoRotate, false);
+  assert.equal(brain.nodeSize, 4);
+  await page.locator("#tab-appearance").click();
+  await page.locator("#interface-density").selectOption("compact");
+  await page.locator("#menu-labels").check();
+  await page.locator("#interface-motion").uncheck();
+  await page.reload();
+  await page.waitForFunction(
+    () => document.documentElement.dataset.density === "compact",
+  );
+  assert.equal(
+    await page.locator("html").getAttribute("data-menu-labels"),
+    "true",
+  );
+  assert.equal(await page.locator("html").getAttribute("data-motion"), "false");
+  checks.push(
+    "Connection and brain forms work; secrets clear after saving; appearance preferences persist",
+  );
+
+  const popupPromise = context.waitForEvent("page");
+  await page.locator('a[href="/golem"]').click();
+  const popup = await popupPromise;
+  popup.on("pageerror", (error) => errors.push(error.message));
+  await popup.waitForFunction(
+    () =>
+      document.getElementById("brain").classList.contains("golem-ready") ||
+      document
+        .getElementById("notice")
+        .textContent.includes("3D не загрузился"),
+  );
+  assert.equal(await popup.locator("button:visible").count(), 0);
+  if (
+    await popup
+      .locator("#brain")
+      .evaluate((el) => el.classList.contains("golem-ready"))
+  ) {
+    const canLose = await popup.evaluate(() => {
+      globalThis.testLoss = document
+        .getElementById("brain")
+        .getContext("webgl2")
+        ?.getExtension("WEBGL_lose_context");
+      if (testLoss) {
+        testLoss.loseContext();
+        return true;
+      }
+      return false;
+    });
+    if (canLose) {
+      await popup.waitForFunction(
+        () => !document.getElementById("fallback-brain").hidden,
+      );
+      await popup.evaluate(() => testLoss.restoreContext());
+      await popup.waitForFunction(() =>
+        document.getElementById("brain").classList.contains("golem-ready"),
+      );
+      const pixels = await popup.evaluate(
+        () =>
+          new Promise((resolve, reject) => {
+            const timer = setTimeout(
+              () => reject(Error("No rendered frame after recovery")),
+              6000,
+            );
+            document.getElementById("brain").addEventListener(
+              "golem-rendered",
+              () => {
+                clearTimeout(timer);
+                const gl = document
+                    .getElementById("brain")
+                    .getContext("webgl2"),
+                  array = new Uint8Array(
+                    gl.drawingBufferWidth * gl.drawingBufferHeight * 4,
+                  );
+                gl.readPixels(
+                  0,
+                  0,
+                  gl.drawingBufferWidth,
+                  gl.drawingBufferHeight,
+                  gl.RGBA,
+                  gl.UNSIGNED_BYTE,
+                  array,
+                );
+                let n = 0;
+                for (let i = 0; i < array.length; i += 4)
+                  if (array[i] > 40 || array[i + 1] > 40 || array[i + 2] > 40)
+                    n++;
+                resolve(n);
+              },
+              { once: true },
+            );
+          }),
+      );
+      assert.ok(pixels > 100, "Golem draws nodes after context recovery");
+    }
+  } else assert.equal(await popup.locator("#fallback-brain").isVisible(), true);
+  await popup.close();
+  checks.push(
+    "Golem opens separately without toolbar clutter and recovers from GPU context loss",
+  );
+
+  // Check every section and tab at phone, tablet and desktop sizes.
+  const routes = [
+    "chat",
+    "memory/archive",
+    "memory/facts",
+    "memory/quality",
+    "graph",
+    "settings/connection",
+    "settings/appearance",
+    "settings/brain",
+  ];
+  for (const width of [320, 390, 768, 1366, 1440, 1920]) {
+    await page.setViewportSize({
+      width,
+      height:
+        width === 320 ? 640 : width === 1366 ? 768 : width < 600 ? 844 : 950,
+    });
+    for (const route of routes) {
+      await page.evaluate((route) => {
+        location.hash = "#" + route;
+      }, route);
+      await page.waitForFunction(
+        (route) =>
+          document.documentElement.dataset.page === route.split("/")[0],
+        route,
+      );
+      if (route.includes("/"))
+        await page.waitForFunction(
+          (tab) =>
+            document
+              .getElementById("tab-" + tab)
+              .getAttribute("aria-selected") === "true",
+          route.split("/")[1],
+        );
+      await page.waitForTimeout(30);
+      const metrics = await page.evaluate(() => ({
+        width: innerWidth,
+        scrollWidth: document.documentElement.scrollWidth,
+        bodyScroll: document.body.scrollTop,
+        top: document.querySelector(".topbar").getBoundingClientRect().top,
+        views: [
+          ...document.querySelectorAll("#workspace > [data-view]"),
+        ].filter((x) => !x.hidden).length,
+      }));
+      if (metrics.scrollWidth > metrics.width)
+        console.log(
+          "Overflow",
+          route,
+          width,
+          await page.evaluate(() =>
+            [...document.querySelectorAll("body *")]
+              .map((el) => ({ el, r: el.getBoundingClientRect() }))
+              .filter(
+                ({ el, r }) =>
+                  r.width &&
+                  r.right > innerWidth + 0.5 &&
+                  !el.closest("[hidden]"),
+              )
+              .slice(0, 15)
+              .map(({ el, r }) => ({
+                tag: el.tagName,
+                id: el.id,
+                class: el.className,
+                right: r.right,
+                width: r.width,
+              })),
+          ),
+        );
+      assert.equal(
+        metrics.scrollWidth,
+        metrics.width,
+        route + " fits width " + width,
+      );
+      assert.equal(metrics.bodyScroll, 0, route + " has no whole-page scroll");
+      assert.equal(metrics.top, 0, route + " keeps the header fixed");
+      assert.equal(metrics.views, 1, "only one section is visible");
+    }
+  }
+  checks.push(
+    "All 8 views/tabs fit 320, 390, 768, 1366, 1440 and 1920 px without whole-page scrolling",
+  );
+  await page.evaluate(() => {
+    localStorage.removeItem("amayori-appearance");
+    location.hash = "#chat";
+  });
+  await page.reload();
+  await page.waitForSelector(".message");
+  await page.locator("#chat-more").click();
+  const download = page.waitForEvent("download");
+  await page.locator("#chat-export").click();
+  assert.match((await download).suggestedFilename(), /^Amayori-/);
+  await page.locator("#chat-more").click();
+  await page.locator("#chat-clear-view").click();
+  assert.equal(await page.locator(".message").count(), 0);
+  assert.equal(
+    messages.length,
+    6,
+    "clearing the screen does not delete the archive",
+  );
+  checks.push(
+    "Export downloads a file; clearing the screen preserves the archive",
+  );
+  const phoneContext = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+    isMobile: true,
+    hasTouch: true,
+    timezoneId: "Asia/Vladivostok",
+  });
+  const phone = await phoneContext.newPage();
+  phone.on("pageerror", (error) => errors.push(error.message));
+  await phone.route("**/api/**", mockRoute);
+  await phone.goto(base);
+  await phone.waitForFunction(
+    () => document.querySelectorAll(".message").length === 6,
+  );
+  assert.equal(
+    await phone.evaluate(() => matchMedia("(pointer: coarse)").matches),
+    true,
+  );
+  await phone.locator("#chat-input").fill("Мобильный черновик");
+  await phone.keyboard.press("Enter");
+  assert.equal(calls, 1, "mobile Enter inserts a newline instead of sending");
+  assert.ok((await phone.locator("#chat-input").inputValue()).endsWith("\n"));
+  await phone.locator("#chat-send").tap();
+  await phone.waitForFunction(
+    () =>
+      document.querySelectorAll(".message").length === 8 &&
+      !document.querySelector(".message.pending"),
+  );
+  assert.equal(calls, 2);
+  await phone.locator('a.nav-link[data-page="memory"]').tap();
+  await phone.locator("#chat-avatar").waitFor({ state: "visible" });
+  await phone.locator("#chat-avatar").tap();
+  await phone.locator("#floating-chat.floating").waitFor({ state: "visible" });
+  assert.equal(await phone.locator("#floating-chat").count(), 1);
+  await phone.locator("#chat-expand").tap();
+  const phoneBounds = await phone.locator("#floating-chat").boundingBox();
+  assert.ok(
+    phoneBounds.x >= 0 &&
+      phoneBounds.y >= 0 &&
+      phoneBounds.x + phoneBounds.width <= 390 &&
+      phoneBounds.y + phoneBounds.height <= 844,
+  );
+  checks.push(
+    "Touch input preserves newlines; sending and avatar opening do not duplicate messages or dialogs",
+  );
+  await phone.locator('a.nav-link[data-page="graph"]').tap();
+  await phone.waitForFunction(() =>
+    document.getElementById("graph-count").textContent.startsWith("3 узлов"),
+  );
+  await phone.locator("#graph-zoom-in").tap();
+  assert.match(
+    await phone.locator("#knowledge-map").getAttribute("aria-label"),
+    /120%/,
+  );
+  await phone.locator("#graph-zoom-out").tap();
+  assert.match(
+    await phone.locator("#knowledge-map").getAttribute("aria-label"),
+    /100%/,
+  );
+  assert.deepEqual(errors, [], "no browser JavaScript errors");
+  console.log(
+    checks.map((value, index) => index + 1 + ". " + value).join("\n"),
+  );
+  console.log("Interface checks passed. No real Cloud.ru requests were sent.");
+} finally {
+  if (browser) await browser.close();
+  if (server) {
+    server.kill();
+    await new Promise((resolve) => {
+      if (server.exitCode !== null) resolve();
+      else server.once("exit", resolve);
+    });
+  }
+  await fs.rm(temp, { recursive: true, force: true });
+}

@@ -1,1 +1,659 @@
-<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Amayori</title><link rel="stylesheet" href="/style.css"></head><body><aside><h1>✦ Amayori</h1><p>Личный ИИ-проект</p><nav><a href="#home">Главная</a><a href="#memory">Память</a><a href="#graph">Граф знаний</a><a href="/golem" target="_blank" rel="noopener">Голем · Отдельная страница ↗</a><a href="#settings">Подключения и настройки</a></nav></aside><main id="home"><span class="tag">Cloud.ru · PostgreSQL · граф знаний</span><h2>Amayori</h2><p>Перетащите круглый аватар по экрану и нажмите, чтобы открыть чат с Cloud.ru.</p><section id="memory"><h3>Память</h3><p>Сообщений в архиве: <strong id="memory-count">—</strong></p><p id="memory-engine">Определяем хранилище памяти…</p></section><section id="graph"><h3>Граф знаний</h3><div class="golem-tools"><button type="button" id="golem-conflicts-button">Проверить противоречия</button><button type="button" id="golem-related-button">Показать связанные знания</button><p id="golem-knowledge-status" role="status"></p><ul id="golem-knowledge-results"></ul></div><p id="graph-count">—</p><p id="graph-engine">Graphiti: проверка подключения…</p><p>Базовые связи слов отображаются отдельно от Graphiti.</p><label>Поиск знаний <input id="golem-search" placeholder="Найти факт или связь"></label><button type="button" id="golem-search-button">Найти</button><button type="button" id="golem-similar">Найти похожие воспоминания</button><button type="button" id="golem-more">Загрузить ещё</button><p id="golem-diagnostics" role="status"></p><p id="golem-selected" role="status">Выберите узел графа</p><div id="golem-source" aria-live="polite"></div><ul id="golem-similar-results"></ul><button type="button" id="graph-reset">Сбросить карту</button><section class="golem-six-panel" aria-label="Инструменты памяти"><h3>Инструменты памяти</h3><div class="golem-six-actions"><button type="button" id="golem-traces">Нейронный след ответа</button><button type="button" id="golem-bridges">Нейронные мосты</button><button type="button" id="golem-immunity">Иммунитет памяти</button></div><div id="golem-six-results" role="status"></div></section><button type="button" id="golem-index-batch">Индексировать следующую порцию чатов</button><p id="golem-index-status" role="status"></p><canvas id="knowledge-map" aria-label="Карта связей знаний"></canvas><ul id="graph-list"></ul></section><section id="settings"><h3>Cloud.ru · Настройки</h3><form id="golem-settings-form" class="settings-form"><h4>Голем · настройки трёхмерного мозга</h4><p id="golem-build-status" role="status">Проверка состояния мозга…</p><label>Вид по умолчанию<select id="golem-default-view"><option value="original">Трёхмерная карта</option></select></label><label><input type="checkbox" id="golem-auto-rotate" checked> Автовращение карты</label><label>Размер узлов <input type="range" id="golem-settings-size" min="1" max="5" step="0.5" value="2"></label><button type="submit">Сохранить настройки мозга</button><p id="golem-settings-status" role="status"></p></form><p id="key-state">Проверка ключа…</p><form id="settings-form" class="settings-form"><label>API-ключ<input type="password" id="api-key" autocomplete="new-password" placeholder="Оставьте пустым, чтобы сохранить существующий"></label><label>Модель по умолчанию<input id="model" list="available-models" required placeholder="Выберите из списка или введите ID"><datalist id="available-models"></datalist></label><button type="button" id="load-models">Загрузить доступные модели</button><p id="models-status" role="status"></p><button type="submit">Сохранить настройки</button></form><button type="button" id="test-connection">Проверить связь</button><p id="app-status" role="status"></p><p>Ключ хранится только в <code>data/cloudru-settings.json</code> и не отправляется в браузер при чтении настроек.</p></section></main><script src="/app.js" defer></script><script src="/knowledge-map.js" defer></script><script src="/chat-avatar.js" defer></script><script src="/golem-knowledge-tools.js" defer></script><script src="/golem-six.js" defer></script></body></html>
+<!doctype html>
+<html lang="ru" data-density="comfortable">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0c0d10" />
+    <title>Диалог · Amayori</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#view-title">К содержимому</a>
+    <aside class="rail" aria-label="Навигация">
+      <a
+        class="brand"
+        href="#chat"
+        aria-label="Amayori — диалог"
+        data-tip="Amayori"
+        ><svg class="brand-mark" aria-hidden="true">
+          <use href="/icons.svg#fox"></use></svg
+        ><span class="rail-label">Amayori</span></a
+      >
+      <nav class="rail-nav" aria-label="Основные разделы">
+        <a
+          href="#chat"
+          class="nav-link"
+          data-page="chat"
+          aria-label="Диалог"
+          data-tip="Диалог"
+          aria-current="page"
+          ><svg aria-hidden="true" class="icon">
+            <use href="/icons.svg#chat"></use></svg
+          ><span class="rail-label">Диалог</span></a
+        >
+        <a
+          href="#memory"
+          class="nav-link"
+          data-page="memory"
+          aria-label="Память"
+          data-tip="Память"
+          ><svg aria-hidden="true" class="icon">
+            <use href="/icons.svg#archive"></use></svg
+          ><span class="rail-label">Память</span></a
+        >
+        <a
+          href="#graph"
+          class="nav-link"
+          data-page="graph"
+          aria-label="Карта знаний"
+          data-tip="Карта знаний"
+          ><svg aria-hidden="true" class="icon">
+            <use href="/icons.svg#graph"></use></svg
+          ><span class="rail-label">Карта знаний</span></a
+        >
+        <div class="rail-divider"></div>
+        <a
+          href="/golem"
+          target="_blank"
+          rel="noopener"
+          class="nav-link"
+          aria-label="Голем — новое окно"
+          data-tip="Голем · новое окно"
+          ><svg aria-hidden="true" class="icon">
+            <use href="/icons.svg#brain"></use></svg
+          ><span class="rail-label">Голем</span></a
+        >
+      </nav>
+      <div class="rail-bottom">
+        <a
+          href="#settings"
+          class="nav-link"
+          data-page="settings"
+          aria-label="Настройки"
+          data-tip="Настройки"
+          ><svg aria-hidden="true" class="icon">
+            <use href="/icons.svg#sliders"></use></svg
+          ><span class="rail-label">Настройки</span></a
+        ><span class="rail-foot" aria-hidden="true"></span>
+      </div>
+    </aside>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="page-heading">
+          <span class="eyebrow">AMAYORI</span>
+          <h1 id="view-title" tabindex="-1">Диалог</h1>
+        </div>
+        <div class="topbar-actions">
+          <button
+            class="icon-button"
+            id="global-search"
+            aria-label="Поиск в архиве (Ctrl+K)"
+            title="Поиск в архиве · Ctrl+K"
+          >
+            <svg aria-hidden="true" class="icon">
+              <use href="/icons.svg#search"></use>
+            </svg></button
+          ><a
+            href="#settings"
+            id="connection-badge"
+            class="status-pill"
+            data-state="idle"
+            ><span class="status-dot"></span><span>Проверка…</span></a
+          >
+        </div>
+      </header>
+      <main id="workspace">
+        <section
+          id="view-chat"
+          class="view chat-view"
+          data-view="chat"
+          aria-label="Диалог"
+        >
+          <div id="chat-workspace"></div>
+        </section>
+        <section
+          id="view-memory"
+          class="view"
+          data-view="memory"
+          aria-label="Память"
+          hidden
+        >
+          <div class="view-toolbar">
+            <div class="tabs" role="tablist" aria-label="Разделы памяти">
+              <a
+                href="#memory/archive"
+                role="tab"
+                id="tab-archive"
+                aria-controls="memory-archive"
+                aria-selected="true"
+                data-tab="archive"
+                >Архив</a
+              ><a
+                href="#memory/facts"
+                role="tab"
+                id="tab-facts"
+                aria-controls="memory-facts"
+                aria-selected="false"
+                data-tab="facts"
+                tabindex="-1"
+                >Знания</a
+              ><a
+                href="#memory/quality"
+                role="tab"
+                id="tab-quality"
+                aria-controls="memory-quality"
+                aria-selected="false"
+                data-tab="quality"
+                tabindex="-1"
+                >Проверка</a
+              >
+            </div>
+            <button
+              id="golem-index-batch"
+              hidden
+              aria-label="Обновить индекс памяти"
+              title="Обновить индекс памяти"
+              class="button subtle small"
+            >
+              <svg aria-hidden="true" class="icon">
+                <use href="/icons.svg#refresh"></use></svg
+              ><span>Обновить индекс</span>
+            </button>
+          </div>
+          <div class="memory-stats">
+            <div>
+              <span class="stat-label">В архиве</span
+              ><strong id="memory-count">—</strong
+              ><span class="stat-unit">сообщений</span>
+            </div>
+            <div>
+              <span class="stat-label">Хранилище</span
+              ><strong id="memory-engine">—</strong
+              ><span class="stat-unit" id="memory-storage-hint"
+                >На этом компьютере</span
+              >
+            </div>
+            <div>
+              <span class="stat-label">Поиск по смыслу</span
+              ><strong id="memory-indexed">—</strong
+              ><span class="stat-unit" id="memory-index-hint"
+                >Проверяем индекс</span
+              >
+            </div>
+          </div>
+          <div class="memory-content">
+            <div
+              id="memory-archive"
+              class="tab-panel archive-panel"
+              role="tabpanel"
+              aria-labelledby="tab-archive"
+            >
+              <div class="section-toolbar">
+                <label class="search-field"
+                  ><svg aria-hidden="true" class="icon">
+                    <use href="/icons.svg#search"></use></svg
+                  ><input
+                    id="archive-search"
+                    type="search"
+                    placeholder="Найти в переписке"
+                    aria-label="Поиск по загруженному архиву" /></label
+                ><span id="archive-summary" class="muted small-text"></span>
+              </div>
+              <div
+                id="archive-list"
+                class="archive-list scroll-area"
+                aria-live="polite"
+              ></div>
+            </div>
+            <div
+              id="memory-facts"
+              class="tab-panel"
+              role="tabpanel"
+              aria-labelledby="tab-facts"
+              hidden
+            >
+              <form id="facts-search-form" class="section-toolbar">
+                <label class="search-field"
+                  ><svg aria-hidden="true" class="icon">
+                    <use href="/icons.svg#search"></use></svg
+                  ><input
+                    id="facts-search"
+                    type="search"
+                    placeholder="Сущность, факт или отношение"
+                    aria-label="Поиск знаний" /></label
+                ><button class="button subtle" type="submit">Найти</button>
+              </form>
+              <div
+                id="facts-list"
+                class="facts-list scroll-area"
+                aria-live="polite"
+              ></div>
+            </div>
+            <div
+              id="memory-quality"
+              class="tab-panel scroll-area"
+              role="tabpanel"
+              aria-labelledby="tab-quality"
+              hidden
+            >
+              <div class="section-heading">
+                <div>
+                  <h2>Порядок в памяти</h2>
+                  <p>Источники, изменения и связи между знаниями.</p>
+                </div>
+                <button
+                  id="refresh-quality"
+                  class="icon-button"
+                  aria-label="Обновить проверку"
+                >
+                  <svg aria-hidden="true" class="icon">
+                    <use href="/icons.svg#refresh"></use>
+                  </svg>
+                </button>
+              </div>
+              <div id="quality-results"></div>
+            </div>
+          </div>
+          <p id="golem-index-status" class="inline-status" role="status"></p>
+        </section>
+        <section
+          id="view-graph"
+          class="view graph-view"
+          data-view="graph"
+          aria-label="Карта знаний"
+          hidden
+        >
+          <form id="graph-search-form" class="view-toolbar graph-toolbar">
+            <label class="search-field"
+              ><svg aria-hidden="true" class="icon">
+                <use href="/icons.svg#search"></use></svg
+              ><input
+                id="golem-search"
+                type="search"
+                placeholder="Найти узел или связь"
+                aria-label="Поиск на карте" /></label
+            ><button
+              type="submit"
+              id="golem-search-button"
+              class="button subtle"
+            >
+              Найти</button
+            ><button
+              type="button"
+              id="golem-similar"
+              hidden
+              class="icon-button"
+              aria-label="Поиск по смыслу"
+              title="Поиск по смыслу"
+            >
+              <svg aria-hidden="true" class="icon">
+                <use href="/icons.svg#spark"></use>
+              </svg>
+            </button>
+          </form>
+          <div class="graph-workspace">
+            <div class="graph-stage">
+              <div class="map-meta">
+                <span id="graph-count">Загрузка карты…</span>
+                <div id="map-actions" class="map-actions" hidden>
+                  <button
+                    type="button"
+                    id="graph-zoom-out"
+                    class="icon-button"
+                    aria-label="Уменьшить карту"
+                    title="Уменьшить"
+                  >
+                    <svg class="icon" aria-hidden="true">
+                      <use href="/icons.svg#minus"></use>
+                    </svg></button
+                  ><button
+                    type="button"
+                    id="graph-zoom-in"
+                    class="icon-button"
+                    aria-label="Увеличить карту"
+                    title="Увеличить"
+                  >
+                    <svg class="icon" aria-hidden="true">
+                      <use href="/icons.svg#plus"></use>
+                    </svg></button
+                  ><button
+                    type="button"
+                    id="graph-reset"
+                    class="icon-button"
+                    aria-label="Центрировать карту"
+                    title="Центрировать"
+                  >
+                    <svg aria-hidden="true" class="icon">
+                      <use href="/icons.svg#expand"></use>
+                    </svg>
+                  </button>
+                </div>
+              </div>
+              <canvas
+                id="knowledge-map"
+                tabindex="0"
+                aria-label="Карта связей. Стрелки выбирают узел, Enter открывает сведения."
+              ></canvas>
+              <div id="graph-empty" class="empty-state" hidden>
+                <svg aria-hidden="true" class="empty-icon">
+                  <use href="/icons.svg#graph"></use>
+                </svg>
+                <h2>У каждой мысли есть связи</h2>
+                <p>После переписки здесь появится карта ваших знаний.</p>
+                <a class="button subtle" href="#chat">Начать диалог</a>
+              </div>
+              <div class="map-footer">
+                <span id="golem-diagnostics" role="status"></span
+                ><button
+                  id="golem-more"
+                  class="text-button"
+                  type="button"
+                  disabled
+                >
+                  Загрузить ещё
+                </button>
+              </div>
+            </div>
+            <aside
+              class="graph-inspector scroll-area"
+              aria-label="Сведения об узле"
+            >
+              <span class="eyebrow">В ФОКУСЕ</span>
+              <h2 id="golem-selected">Выберите узел</h2>
+              <p class="muted inspector-hint">
+                Нажмите на точку, чтобы увидеть её связи и источники.
+              </p>
+              <div id="golem-source" aria-live="polite"></div>
+              <ul id="golem-similar-results" class="result-list"></ul>
+            </aside>
+          </div>
+        </section>
+        <section
+          id="view-settings"
+          class="view"
+          data-view="settings"
+          aria-label="Настройки"
+          hidden
+        >
+          <div class="view-toolbar">
+            <div class="tabs" role="tablist" aria-label="Группы настроек">
+              <a
+                href="#settings/connection"
+                id="tab-connection"
+                role="tab"
+                aria-controls="settings-connection"
+                aria-selected="true"
+                data-tab="connection"
+                >Подключение</a
+              ><a
+                href="#settings/appearance"
+                id="tab-appearance"
+                role="tab"
+                aria-controls="settings-appearance"
+                aria-selected="false"
+                data-tab="appearance"
+                tabindex="-1"
+                >Внешний вид</a
+              ><a
+                href="#settings/brain"
+                id="tab-brain"
+                role="tab"
+                aria-controls="settings-brain"
+                aria-selected="false"
+                data-tab="brain"
+                tabindex="-1"
+                >Голем</a
+              >
+            </div>
+          </div>
+          <div class="settings-content scroll-area">
+            <div
+              id="settings-connection"
+              class="tab-panel settings-grid"
+              role="tabpanel"
+              aria-labelledby="tab-connection"
+            >
+              <form id="settings-form" class="settings-card">
+                <div class="card-heading">
+                  <span class="surface-icon"
+                    ><svg aria-hidden="true" class="icon">
+                      <use href="/icons.svg#spark"></use></svg
+                  ></span>
+                  <div>
+                    <h2>Cloud.ru</h2>
+                    <p>Модель для ваших диалогов.</p>
+                  </div>
+                </div>
+                <label class="field-label" for="api-key">API-ключ</label>
+                <div class="input-with-action">
+                  <input
+                    type="password"
+                    id="api-key"
+                    autocomplete="new-password"
+                    placeholder="Введите ключ"
+                  /><button
+                    id="toggle-key"
+                    type="button"
+                    class="icon-button"
+                    aria-label="Показать ключ"
+                  >
+                    <svg aria-hidden="true" class="icon">
+                      <use href="/icons.svg#eye"></use>
+                    </svg>
+                  </button>
+                </div>
+                <p id="key-state" class="field-hint">
+                  Ключ хранится на этом компьютере.
+                </p>
+                <div class="field-heading">
+                  <label class="field-label" for="model"
+                    >Модель по умолчанию</label
+                  ><button type="button" id="load-models" class="text-button">
+                    <svg aria-hidden="true" class="icon">
+                      <use href="/icons.svg#refresh"></use></svg
+                    >Обновить список
+                  </button>
+                </div>
+                <input
+                  id="model"
+                  list="available-models"
+                  required
+                  placeholder="Выберите модель или введите ID"
+                /><datalist id="available-models"></datalist>
+                <p id="models-status" class="field-hint" role="status"></p>
+                <div class="form-actions">
+                  <button class="button primary" type="submit">Сохранить</button
+                  ><button
+                    type="button"
+                    id="test-connection"
+                    class="button subtle"
+                  >
+                    Проверить связь
+                  </button>
+                </div>
+                <p id="app-status" class="inline-status" role="status"></p>
+              </form>
+              <div class="settings-side">
+                <article class="settings-card">
+                  <div class="card-heading">
+                    <span class="surface-icon"
+                      ><svg aria-hidden="true" class="icon">
+                        <use href="/icons.svg#database"></use></svg
+                    ></span>
+                    <div>
+                      <h2>Хранилище</h2>
+                      <p id="database-state">Проверка состояния…</p>
+                    </div>
+                  </div>
+                  <p class="muted">
+                    Переписка остаётся в архиве. Если настроен PostgreSQL, он
+                    становится основным хранилищем.
+                  </p>
+                  <span class="quiet-badge"
+                    ><svg aria-hidden="true" class="icon">
+                      <use href="/icons.svg#shield"></use></svg
+                    >Ключ не возвращается в браузер</span
+                  >
+                </article>
+                <article class="quiet-note">
+                  <svg aria-hidden="true" class="icon">
+                    <use href="/icons.svg#note"></use>
+                  </svg>
+                  <p>
+                    Проверка связи отправляет короткое сообщение выбранной
+                    модели.
+                  </p>
+                </article>
+              </div>
+            </div>
+            <div
+              id="settings-appearance"
+              class="tab-panel settings-grid"
+              role="tabpanel"
+              aria-labelledby="tab-appearance"
+              hidden
+            >
+              <div class="settings-card">
+                <div class="card-heading">
+                  <span class="surface-icon"
+                    ><svg aria-hidden="true" class="icon">
+                      <use href="/icons.svg#moon"></use></svg
+                  ></span>
+                  <div>
+                    <h2>Обсидиан и золото</h2>
+                    <p>Спокойный фон. Акценты по делу.</p>
+                  </div>
+                </div>
+                <div class="theme-preview" aria-label="Чёрно-золотая палитра">
+                  <i></i><i></i><i></i><i></i><span>Тёмная тема</span>
+                </div>
+                <label class="setting-row" for="interface-density"
+                  ><span
+                    ><strong>Плотность</strong
+                    ><small>Расстояния между элементами</small></span
+                  ><select id="interface-density">
+                    <option value="comfortable">Комфортная</option>
+                    <option value="compact">Компактная</option>
+                  </select></label
+                ><label class="setting-row" for="menu-labels"
+                  ><span
+                    ><strong>Подписи меню</strong
+                    ><small>По умолчанию — только значки</small></span
+                  ><input
+                    type="checkbox"
+                    role="switch"
+                    id="menu-labels" /></label
+                ><label class="setting-row" for="interface-motion"
+                  ><span
+                    ><strong>Плавные переходы</strong
+                    ><small>С учётом настроек устройства</small></span
+                  ><input
+                    type="checkbox"
+                    role="switch"
+                    id="interface-motion"
+                    checked
+                /></label>
+                <p class="field-hint">
+                  Изменения применяются сразу и сохраняются в этом браузере.
+                </p>
+              </div>
+              <div class="settings-side">
+                <article class="settings-card avatar-preview-card">
+                  <span class="avatar-preview"
+                    ><svg aria-hidden="true">
+                      <use href="/icons.svg#fox"></use></svg
+                  ></span>
+                  <h2>Рядом, когда нужно</h2>
+                  <p>
+                    На других экранах аватар открывает тот же диалог. Перетащите
+                    его в удобное место.
+                  </p>
+                  <button
+                    type="button"
+                    id="reset-avatar-position"
+                    class="button subtle small"
+                  >
+                    Вернуть на место
+                  </button>
+                </article>
+              </div>
+            </div>
+            <div
+              id="settings-brain"
+              class="tab-panel settings-grid"
+              role="tabpanel"
+              aria-labelledby="tab-brain"
+              hidden
+            >
+              <form id="golem-settings-form" class="settings-card">
+                <div class="card-heading">
+                  <span class="surface-icon"
+                    ><svg aria-hidden="true" class="icon">
+                      <use href="/icons.svg#brain"></use></svg
+                  ></span>
+                  <div>
+                    <h2>Движение и детали</h2>
+                    <p>Для отдельного окна Голема.</p>
+                  </div>
+                </div>
+                <input
+                  type="hidden"
+                  id="golem-default-view"
+                  value="original"
+                /><label class="setting-row" for="golem-auto-rotate"
+                  ><span
+                    ><strong>Автовращение</strong
+                    ><small>Медленное движение карты</small></span
+                  ><input
+                    type="checkbox"
+                    role="switch"
+                    id="golem-auto-rotate"
+                    checked /></label
+                ><label class="range-field" for="golem-settings-size"
+                  ><span
+                    >Размер узлов <output id="node-size-value">2</output></span
+                  ><input
+                    type="range"
+                    id="golem-settings-size"
+                    min="1"
+                    max="5"
+                    step="0.5"
+                    value="2"
+                  /><span class="range-labels"
+                    ><small>Меньше</small><small>Крупнее</small></span
+                  ></label
+                >
+                <div class="form-actions">
+                  <button type="submit" class="button primary">
+                    Сохранить
+                  </button>
+                </div>
+                <p
+                  id="golem-settings-status"
+                  class="inline-status"
+                  role="status"
+                ></p>
+              </form>
+              <div class="settings-side">
+                <article class="settings-card">
+                  <span class="eyebrow">СОСТОЯНИЕ МОЗГА</span>
+                  <h2 id="golem-build-status">Проверка…</h2>
+                  <p class="muted">
+                    Изменения применяются к 3D и резервной карте в открытом окне
+                    автоматически.
+                  </p>
+                </article>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+    <div id="toast" class="toast" role="status" hidden></div>
+    <script src="/ui.js" defer></script>
+    <script src="/app.js" defer></script>
+    <script src="/chat-avatar.js" defer></script>
+    <script src="/knowledge-map.js" defer></script>
+  </body>
+</html>
