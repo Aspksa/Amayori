@@ -23,6 +23,16 @@
     semanticVisible = false,
     source = "";
   function updateInspectorVisibility() {
+    const active = selected !== null || semanticVisible;
+    const inspector = document.querySelector(".graph-inspector");
+    document.querySelector(".graph-workspace").dataset.hasNodes = String(
+      graph.nodes.length > 0,
+    );
+    inspector.dataset.active = String(active);
+    $("graph-inspector-close").hidden = !active;
+    document
+      .querySelector(".graph-workspace")
+      .classList.toggle("has-details", active);
     const visible = graph.nodes.length > 0 || semanticVisible;
     document.querySelector(".graph-inspector").hidden = !visible;
     document
@@ -205,8 +215,8 @@
   function inspect(node) {
     semanticVisible = false;
     $("golem-similar-results").replaceChildren();
-    updateInspectorVisibility();
     selected = String(node.id);
+    updateInspectorVisibility();
     $("golem-selected").textContent = node.label || node.id;
     const edges = graph.edges.filter(
         (edge) =>
@@ -340,6 +350,18 @@
     filter = $("golem-search").value.trim();
     void load(true);
   });
+  $("graph-inspector-close").addEventListener("click", () => {
+    semanticVisible = false;
+    selected = null;
+    $("golem-source").replaceChildren();
+    $("golem-similar-results").replaceChildren();
+    $("golem-selected").textContent = "Выберите узел";
+    document.querySelector(".inspector-hint").textContent =
+      "Нажмите на точку, чтобы увидеть её связи и источники.";
+    updateInspectorVisibility();
+    draw();
+    canvas.focus();
+  });
   $("graph-reset").addEventListener("click", () => {
     semanticVisible = false;
     selected = null;
@@ -403,26 +425,26 @@
   });
   new ResizeObserver(layout).observe(canvas);
   document.addEventListener("amayori-view", (event) => {
-    if (event.detail.page === "graph") {
+    if (event.detail.visiblePages?.includes("graph")) {
       requestAnimationFrame(layout);
       void load(true);
     }
   });
   document.addEventListener("amayori-chat-updated", () => {
-    if (UI.state.page === "graph") void load(true);
+    if (UI.isViewVisible("graph")) void load(true);
   });
   addEventListener("storage", (event) => {
-    if (event.key === "amayori-chat-update" && UI.state.page === "graph")
+    if (event.key === "amayori-chat-update" && UI.isViewVisible("graph"))
       void load(true);
   });
   setInterval(() => {
     if (
       !document.hidden &&
-      UI.state.page === "graph" &&
+      UI.isViewVisible("graph") &&
       !filter &&
       source !== "postgresql"
     )
       void load(true);
   }, 12000);
-  if (UI.state.page === "graph") void load(true);
+  if (UI.isViewVisible("graph")) void load(true);
 })();

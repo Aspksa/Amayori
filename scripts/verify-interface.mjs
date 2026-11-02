@@ -510,7 +510,7 @@ try {
   await popup.evaluate(() =>
     globalThis.__streams[0].dispatchEvent(
       new MessageEvent("message", {
-        data: JSON.stringify({type: "build", state: "building"}),
+        data: JSON.stringify({ type: "build", state: "building" }),
       }),
     ),
   );
@@ -728,6 +728,392 @@ try {
   checks.push(
     "Semantic matches, no-match messages and errors stay visible on an empty graph, including refresh and mobile layout",
   );
+  semanticScenario = false;
+  const workContext = await browser.newContext({
+    viewport: { width: 1440, height: 950 },
+    timezoneId: "Asia/Vladivostok",
+  });
+  await workContext.route("**/api/**", mockRoute);
+  const work = await workContext.newPage();
+  work.on("pageerror", (error) => errors.push(error.message));
+  await work.goto(base + "/#chat");
+  await work.waitForFunction(
+    (count) => document.querySelectorAll(".message").length === count,
+    messages.length,
+  );
+  await work.evaluate(() => {
+    globalThis.originalChat = document.getElementById("floating-chat");
+  });
+  await work.locator("#chat-input").fill("Черновик рабочего места");
+  await work.locator("#workspace-toggle").click();
+  await work.locator("#workspace.workspace-split").waitFor();
+  assert.equal(
+    await work.locator("#workspace > [data-view]:visible").count(),
+    2,
+  );
+  assert.equal(await work.locator("#view-graph").isVisible(), true);
+  assert.equal(await work.locator("#chat-avatar").isVisible(), false);
+  assert.equal(
+    await work.locator("#chat-input").inputValue(),
+    "Черновик рабочего места",
+  );
+  const firstShare = Number(
+    await work.locator("#workspace-separator").getAttribute("aria-valuenow"),
+  );
+  await work.locator("#workspace-separator").focus();
+  await work.keyboard.press("ArrowLeft");
+  assert.notEqual(
+    Number(
+      await work.locator("#workspace-separator").getAttribute("aria-valuenow"),
+    ),
+    firstShare,
+  );
+  const separator = await work.locator("#workspace-separator").boundingBox();
+  await work.mouse.move(
+    separator.x + separator.width / 2,
+    separator.y + separator.height / 2,
+  );
+  await work.mouse.down();
+  await work.mouse.move(separator.x - 70, separator.y + separator.height / 2, {
+    steps: 8,
+  });
+  await work.mouse.up();
+  const resizedShare = Number(
+    await work.locator("#workspace-separator").getAttribute("aria-valuenow"),
+  );
+  assert.ok(resizedShare >= 35 && resizedShare <= 65);
+  await work.locator("#workspace-context").selectOption("archive");
+  await work.locator("#view-memory").waitFor({ state: "visible" });
+  await work.waitForFunction(
+    (count) =>
+      document.querySelectorAll("#archive-list .archive-item").length === count,
+    messages.length,
+  );
+  assert.equal(
+    await work.locator("#chat-input").inputValue(),
+    "Черновик рабочего места",
+  );
+  await work.locator("#chat-input").fill("Совместная работа с архивом");
+  const beforeSend = messages.length;
+  await work.locator("#chat-send").click();
+  await work.waitForFunction(
+    (count) =>
+      document.querySelectorAll(".message").length === count &&
+      !document.querySelector(".message.pending"),
+    beforeSend + 2,
+  );
+  await work
+    .locator("#archive-list .archive-item")
+    .filter({ hasText: "Совместная работа с архивом" })
+    .waitFor({ state: "visible" });
+  assert.equal(
+    await work
+      .locator(".message.user")
+      .filter({ hasText: "Совместная работа с архивом" })
+      .count(),
+    1,
+  );
+  const otherWork = await workContext.newPage();
+  otherWork.on("pageerror", (error) => errors.push(error.message));
+  await otherWork.goto(base + "/#graph");
+  await otherWork.locator("#view-graph").waitFor();
+  await work.locator("#workspace-context").selectOption("graph");
+  await work.locator("#view-graph").waitFor();
+  await work.locator("#workspace-context").selectOption("archive");
+  await otherWork.waitForFunction(
+    () => AmayoriUI.workspace.preferences.split.target === "archive",
+  );
+  // A storage refresh on a graph route must not write its route back as the default context.
+  await work.waitForTimeout(150);
+  assert.equal(
+    await work.locator("#workspace-context").inputValue(),
+    "archive",
+  );
+  assert.equal(await work.locator("#view-memory").isVisible(), true);
+  assert.equal(await otherWork.locator("#view-graph").isVisible(), true);
+  await otherWork.close();
+  // Enabling split on a full-screen map remembers that current context.
+  await work.locator("#workspace-toggle").click();
+  await work.locator('a.nav-link[data-page="graph"]').click();
+  await work.locator("#view-graph").waitFor();
+  await work.locator("#workspace-toggle").click();
+  await work.locator('a.nav-link[data-page="chat"]').click();
+  await work.locator("#view-graph").waitFor();
+  assert.equal(await work.locator("#workspace-context").inputValue(), "graph");
+  await work.locator("#chat-input").fill("Сохранить при переходах");
+  await work.locator('a.nav-link[data-page="graph"]').click();
+  await work.locator("#view-graph").waitFor({ state: "visible" });
+  assert.equal(await work.locator("#view-chat").isVisible(), true);
+  await work.locator('a.nav-link[data-page="memory"]').click();
+  await work.locator("#archive-list .archive-item").first().click();
+  await work.waitForFunction(
+    () => document.documentElement.dataset.page === "chat",
+  );
+  assert.equal(
+    await work.locator("#view-memory").isVisible(),
+    true,
+    "opening an archived message keeps the archive beside chat",
+  );
+  assert.equal(
+    await work.locator("#chat-input").inputValue(),
+    "Сохранить при переходах",
+  );
+  assert.equal(
+    await work.evaluate(
+      () => originalChat === document.getElementById("floating-chat"),
+    ),
+    true,
+  );
+  await work.locator("#tab-facts").click();
+  await work.waitForFunction(
+    () =>
+      document.documentElement.dataset.page === "memory" &&
+      document.getElementById("tab-facts").getAttribute("aria-selected") ===
+        "true",
+  );
+  assert.equal(await work.locator("#workspace.workspace-split").count(), 0);
+  await work.locator('a.nav-link[data-page="chat"]').click();
+  await work.locator("#workspace.workspace-split").waitFor();
+  assert.equal(
+    await work.locator("#chat-input").inputValue(),
+    "Сохранить при переходах",
+  );
+  checks.push(
+    "Split workspace keeps one chat and its draft; archive updates beside replies and remains open when selecting messages",
+  );
+
+  await work.locator('a.nav-link[data-page="settings"]').click();
+  await work.locator("#tab-appearance").click();
+  await work.locator("#workspace-settings summary").click();
+  await work.locator("#workspace-chat-side").selectOption("left");
+  await work.locator("#workspace-share").focus();
+  await work.keyboard.press("Home");
+  await work.keyboard.press("ArrowRight");
+  const savedShare = await work.locator("#workspace-share").inputValue();
+  await work.locator('a.nav-link[data-page="chat"]').click();
+  await work.locator("#workspace.workspace-split").waitFor();
+  const chatBox = await work.locator("#view-chat").boundingBox(),
+    archiveBox = await work.locator("#view-memory").boundingBox();
+  assert.ok(chatBox.x < archiveBox.x);
+  await work.reload();
+  await work.locator("#workspace.workspace-split").waitFor();
+  assert.equal(
+    await work.locator("#workspace").getAttribute("data-chat-side"),
+    "left",
+  );
+  assert.equal(
+    await work.locator("#workspace-separator").getAttribute("aria-valuenow"),
+    savedShare,
+  );
+  assert.equal(await work.locator("#floating-chat").count(), 1);
+  checks.push(
+    "Split side and pane sizes persist without changing full-screen settings and knowledge tabs",
+  );
+
+  await work.locator('a.nav-link[data-page="settings"]').click();
+  await work.locator("#tab-appearance").click();
+  await work.locator("#menu-settings summary").click();
+  await work.locator('[data-menu-id="memory"] .menu-pin').click();
+  assert.equal(
+    await work.locator('#nav-pinned [data-nav-id="memory"]').count(),
+    0,
+  );
+  assert.equal(await work.locator('[data-nav-id="memory"]').count(), 1);
+  await work.locator('[data-menu-id="graph"] [data-direction="up"]').click();
+  await work.locator('[data-menu-id="graph"] [data-direction="up"]').click();
+  assert.equal(
+    await work
+      .locator("#nav-pinned .nav-link")
+      .first()
+      .getAttribute("data-nav-id"),
+    "graph",
+  );
+  await work
+    .locator('[data-menu-id="golem"] .menu-grip')
+    .dragTo(work.locator('[data-menu-id="graph"]'));
+  assert.equal(
+    await work
+      .locator("#nav-pinned .nav-link")
+      .first()
+      .getAttribute("data-nav-id"),
+    "golem",
+  );
+  await work.locator("#nav-more").click();
+  await work.locator('#nav-overflow [data-nav-id="memory"]').click();
+  await work.waitForFunction(
+    () => document.documentElement.dataset.page === "memory",
+  );
+  assert.equal(await work.locator("#nav-overflow").isVisible(), false);
+  assert.equal(
+    await work.locator("#nav-more").getAttribute("data-current"),
+    "true",
+  );
+  await work.reload();
+  await work.waitForFunction(
+    () => document.documentElement.dataset.page === "memory",
+  );
+  assert.equal(
+    await work
+      .locator("#nav-pinned .nav-link")
+      .first()
+      .getAttribute("data-nav-id"),
+    "golem",
+  );
+  assert.equal(
+    await work.locator('#nav-pinned [data-nav-id="memory"]').count(),
+    0,
+  );
+  assert.equal(
+    await work.locator("#nav-more").getAttribute("data-current"),
+    "true",
+  );
+  await work.locator('a.nav-link[data-page="settings"]').click();
+  await work.locator("#tab-appearance").click();
+  await work.locator("#menu-settings summary").click();
+  for (const id of ["chat", "graph", "golem"])
+    await work.locator('[data-menu-id="' + id + '"] .menu-pin').click();
+  assert.equal(await work.locator("#nav-pinned a").count(), 0);
+  assert.equal(
+    await work.locator('.rail-bottom [data-page="settings"]').isVisible(),
+    true,
+  );
+  await work.locator("#nav-more").click();
+  await work.keyboard.press("ArrowDown");
+  await work.keyboard.press("Escape");
+  assert.equal(await work.locator("#nav-overflow").isVisible(), false);
+  assert.equal(
+    await work.evaluate(() => document.activeElement.id),
+    "nav-more",
+  );
+  await work.locator("#reset-menu").click();
+  assert.deepEqual(
+    await work
+      .locator("#nav-pinned .nav-link")
+      .evaluateAll((nodes) => nodes.map((n) => n.dataset.navId)),
+    ["chat", "memory", "graph", "golem"],
+  );
+  assert.equal(await work.locator("#nav-more").isVisible(), false);
+  checks.push(
+    "Personal menu supports pinning, keyboard ordering, drag and drop, More navigation, persistence and reset without duplicate links",
+  );
+
+  for (const width of [320, 390, 768, 1024, 1366, 1920]) {
+    await work.setViewportSize({
+      width,
+      height: width === 320 ? 640 : width < 600 ? 844 : 950,
+    });
+    for (const target of ["graph", "archive"]) {
+      await work.evaluate((target) => {
+        AmayoriUI.navigate("chat");
+        AmayoriUI.workspace.updateSplit({
+          enabled: true,
+          target,
+          chatSide: "right",
+          share: 50,
+        });
+      }, target);
+      await work.locator("#workspace.workspace-split").waitFor();
+      const expectedAxis = await work.locator("#workspace").evaluate((el) => {
+        const s = getComputedStyle(el);
+        return el.clientWidth -
+          parseFloat(s.paddingLeft) -
+          parseFloat(s.paddingRight) <
+          840
+          ? "y"
+          : "x";
+      });
+      await work.waitForFunction(
+        (axis) =>
+          document.getElementById("workspace").dataset.splitAxis === axis,
+        expectedAxis,
+      );
+      await work.waitForTimeout(50);
+      const bounds = await work.evaluate(() => ({
+        width: innerWidth,
+        scroll: document.documentElement.scrollWidth,
+        top: document.querySelector(".topbar").getBoundingClientRect().top,
+        visible: [
+          ...document.querySelectorAll("#workspace>[data-view]"),
+        ].filter((x) => !x.hidden).length,
+        chat: document
+          .getElementById("view-chat")
+          .getBoundingClientRect()
+          .toJSON(),
+        context: document
+          .querySelector(
+            '#workspace>[data-view]:not([data-view="chat"]):not([hidden])',
+          )
+          .getBoundingClientRect()
+          .toJSON(),
+      }));
+      if (bounds.scroll !== bounds.width)
+        console.log("Split overflow", width, target, bounds);
+      assert.equal(bounds.width, bounds.scroll);
+      assert.equal(bounds.top, 0);
+      assert.equal(bounds.visible, 2);
+      assert.ok(
+        bounds.chat.width > 0 &&
+          bounds.chat.height > 150 &&
+          bounds.context.width > 0 &&
+          bounds.context.height > 100,
+      );
+      if (expectedAxis === "x")
+        assert.ok(bounds.context.right <= bounds.chat.left);
+      else assert.ok(bounds.context.bottom <= bounds.chat.top);
+      if (target === "graph") {
+        await work.locator("#knowledge-map").focus();
+        await work.keyboard.press("ArrowRight");
+        await work
+          .locator("#graph-inspector-close")
+          .waitFor({ state: "visible" });
+        await work.locator("#graph-inspector-close").click();
+        assert.equal(await work.locator(".graph-inspector").isVisible(), false);
+      }
+    }
+  }
+  checks.push(
+    "Both split contexts fit desktop, tablet and small phones; map details remain usable within the pane",
+  );
+
+  const splitPhoneContext = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+    isMobile: true,
+    hasTouch: true,
+    timezoneId: "Asia/Vladivostok",
+  });
+  await splitPhoneContext.route("**/api/**", mockRoute);
+  const splitPhone = await splitPhoneContext.newPage();
+  splitPhone.on("pageerror", (error) => errors.push(error.message));
+  await splitPhone.addInitScript(() =>
+    localStorage.removeItem("amayori-workspace"),
+  );
+  await splitPhone.goto(base + "/#chat");
+  await splitPhone.locator(".message").first().waitFor();
+  await splitPhone.locator("#workspace-toggle").tap();
+  await splitPhone.locator("#workspace.workspace-split").waitFor();
+  assert.equal(
+    await splitPhone.locator("#workspace").getAttribute("data-split-axis"),
+    "y",
+  );
+  await splitPhone.locator("#chat-input").fill("Две панели на телефоне");
+  await splitPhone.keyboard.press("Enter");
+  assert.ok(
+    (await splitPhone.locator("#chat-input").inputValue()).endsWith("\n"),
+  );
+  await splitPhone.locator("#workspace-context").selectOption("archive");
+  await splitPhone.locator("#view-memory").waitFor({ state: "visible" });
+  assert.equal(await splitPhone.locator("#floating-chat").count(), 1);
+  await work.evaluate(() =>
+    localStorage.setItem("amayori-workspace", "{broken"),
+  );
+  await work.reload();
+  await work.locator("#chat-input").waitFor();
+  assert.equal(await work.locator("#workspace.workspace-split").count(), 0);
+  assert.equal(await work.locator("#nav-pinned a").count(), 4);
+  checks.push(
+    "Touch split mode preserves multiline drafts; malformed saved preferences recover to the approved default layout",
+  );
+
   assert.deepEqual(errors, [], "no browser JavaScript errors");
   console.log(
     checks.map((value, index) => index + 1 + ". " + value).join("\n"),
