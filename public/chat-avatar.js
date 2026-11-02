@@ -20,8 +20,8 @@ document.getElementById('chat-form').addEventListener('submit',async e=>{
  const history=document.getElementById('chat-history');
  const line=document.createElement('p');line.className='chat-user';line.textContent=text;history.append(line);
  input.value='';const info=document.createElement('p');info.className='chat-hint';info.textContent='Amayori думает…';history.append(info);history.scrollTop=history.scrollHeight;
- const submit=document.querySelector('#chat-form button');submit.disabled=true;
- try{const r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:text,model:document.getElementById('chat-model').value})});const data=await r.json();if(!r.ok)throw Error(data.error||'Ошибка сервера');info.className='chat-reply';info.textContent=data.answer;document.dispatchEvent(new Event('amayori-chat-updated'))}catch(err){info.textContent='Ошибка: '+err.message}finally{submit.disabled=false;history.scrollTop=history.scrollHeight}
+ const submit=document.querySelector('#chat-form button');submit.disabled=true;const started=performance.now();
+ try{const r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:text,model:document.getElementById('chat-model').value})});const data=await r.json();if(!r.ok)throw Error(data.error||'Ошибка сервера');info.className='chat-reply';info.textContent=data.answer;info.title='Модель: '+(data.model||'по умолчанию')+' · Время: '+Math.round((performance.now()-started)/1000)+' с';document.dispatchEvent(new Event('amayori-chat-updated'))}catch(err){info.textContent='Ошибка: '+err.message}finally{submit.disabled=false;history.scrollTop=history.scrollHeight}
 });
 addEventListener('resize',clamp);
 
