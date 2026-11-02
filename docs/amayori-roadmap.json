@@ -76,6 +76,13 @@
       "feature": "Model-independent inference gateway: Cloud.ru and direct local server without Ollama",
       "url": "https://github.com/Aspksa/Amayori/pull/23",
       "merged": false
+    },
+    {
+      "number": 25,
+      "status": "open",
+      "feature": "Explicitly reviewed dataset export for future LoRA training; no weights trained",
+      "url": "https://github.com/Aspksa/Amayori/pull/25",
+      "merged": false
     }
   ],
   "roadmap": [
@@ -125,6 +132,7 @@
       "priority": 5,
       "status": "planned",
       "tasks": [
+        "Review and merge PR #25: opt-in training example export",
         "Curate verified consent-aware training examples",
         "Version datasets and exclude secrets",
         "Prototype LoRA/QLoRA with resource checks",
