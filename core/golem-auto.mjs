@@ -7,11 +7,12 @@ const source=path.join(root,'data','chats.json');
 const folder=path.join(root,'data','golem');
 const files=['golem_cortex.json','golem_vectors.npy','metadata.json'];
 const python=process.env.AMAYORI_GOLEM_PYTHON || (process.platform==='win32'?'py':'python3');
-let running=false,lastFailure=0;
+let running=false,lastFailure=0,failures=0;
+const retryDelay=()=>Math.min(3600000,60000*2**Math.min(failures,6));
 let status={state:'idle',nodes:0,updatedAt:null,error:null};
 export function getGolemBuildStatus(){return {...status,running};}
 export async function checkGolemBrain(){
- if(running||process.env.AMAYORI_GOLEM_AUTO_BUILD==='0'||Date.now()-lastFailure<300000)return;
+ if(running||process.env.AMAYORI_GOLEM_AUTO_BUILD==='0'||Date.now()-lastFailure<retryDelay())return;
  const src=await fs.stat(source).catch(()=>null);
  if(!src||src.size<5)return;
  const stats=await Promise.all(files.map(n=>fs.stat(path.join(folder,n)).catch(()=>null)));
@@ -22,11 +23,11 @@ export async function checkGolemBrain(){
  const args=python==='py'?['-3',script]:[script];
  const child=spawn(python,args,{cwd:root,windowsHide:true,stdio:['ignore','ignore','pipe']});
  let stderr='',finished=false;
- const timeout=setTimeout(()=>child.kill(),1200000);
+ const timeout=setTimeout(()=>{child.kill();done('Build timed out after 20 minutes')},1200000);
  const done=(error)=>{
   if(finished)return;finished=true;clearTimeout(timeout);running=false;
-  if(error){lastFailure=Date.now();status={...status,state:'error',error:String(error).slice(-500)};console.warn('Golem auto build:',error);}
-  else{status={...status,state:'ready',updatedAt:new Date().toISOString(),error:null};void fs.readFile(path.join(folder,'metadata.json'),'utf8').then(x=>{status.nodes=JSON.parse(x).nodes||0}).catch(()=>{});}
+  if(error){failures++;lastFailure=Date.now();status={...status,state:'error',error:String(error).slice(-500)};console.warn('Golem auto build:',error);}
+  else{failures=0;lastFailure=0;status={...status,state:'ready',updatedAt:new Date().toISOString(),error:null};void fs.readFile(path.join(folder,'metadata.json'),'utf8').then(x=>{status.nodes=JSON.parse(x).nodes||0}).catch(()=>{});}
  };
  child.stderr.on('data',d=>{stderr=(stderr+d.toString()).slice(-3000)});
  child.on('error',e=>done(e.message));
