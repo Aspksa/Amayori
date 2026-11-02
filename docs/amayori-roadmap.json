@@ -1,130 +1,85 @@
 {
   "schema_version": "1.0.0",
   "project": "Aspksa/Amayori",
+  "version": "0.6.1",
   "updated_at": "2026-11-02",
   "language": "ru",
-  "objective": "Единый развивающийся ИИ-мозг: Cloud.ru сейчас, собственная локальная модель и проверяемое дообучение позже",
+  "objective": "Единый развивающийся ИИ-мозг: Cloud.ru сейчас, проверяемое дообучение позже",
   "constraints": {
     "windows": true,
     "no_docker": true,
     "no_ollama": true,
+    "no_local_inference": true,
     "single_launcher": "Amayori.bat",
     "local_api_keys_only": true,
     "never_commit_secrets": true,
     "project_golem_original_visuals": true
   },
   "architecture": {
-    "chat": "Cloud.ru now, optional direct llama.cpp-compatible local inference later",
-    "canonical_memory": "data/chats.json on main; PostgreSQL planned in PR #22",
-    "knowledge_visualization": "Project Golem backed by Amayori memory",
-    "vector_search": "Local Golem embeddings on main; derived pgvector index proposed in PR #21",
-    "training": "not implemented"
+    "chat": "Только Cloud.ru. Локальный inference был добавлен в PR #23 и намеренно удалён в PR #27",
+    "canonical_memory": "data/chats.json по умолчанию; PostgreSQL становится каноническим при AMAYORI_DATABASE_URL (PR #22), миграция через npm run migrate:postgres",
+    "knowledge": "amayori_facts: версионируемые триплеты со статусами active/superseded/rejected (PR #28)",
+    "knowledge_visualization": "Отдельная страница /golem: Three.js поверх Canvas-резерва, данные из PostgreSQL-фактов или data/graph.json",
+    "vector_search": "pgvector(384) на эмбеддингах Cloud.ru при AMAYORI_EMBEDDING_MODEL (PR #21, #31); отдельно локальные Python-эмбеддинги и UMAP/PCA для 3D-проекции",
+    "external_bridges": "MemOS и Graphiti: только опциональные локальные HTTP-адаптеры, сами движки не входят в проект",
+    "training": "не реализовано; есть только экспорт вручную проверенных примеров (PR #25)"
   },
   "delivered": [
-    {
-      "id": "single-launcher",
-      "status": "merged",
-      "pr": 12,
-      "description": "One Amayori.bat launcher and optional brain build"
-    },
-    {
-      "id": "golem-integration",
-      "status": "merged",
-      "prs": [
-        10,
-        11,
-        13,
-        14,
-        15,
-        16,
-        17,
-        18
-      ],
-      "description": "Original Project Golem UI, chat-derived cortex, background rebuild, rollback and status"
-    },
-    {
-      "id": "postgres-foundation",
-      "status": "merged",
-      "pr": 19,
-      "description": "Optional PostgreSQL pgvector infrastructure, not chat retrieval"
-    },
-    {
-      "id": "single-json-memory",
-      "status": "merged",
-      "pr": 20,
-      "description": "One canonical chats.json archive; no duplicate PostgreSQL chat writes"
-    }
+    {"id": "single-launcher", "status": "merged", "prs": [12], "description": "Один Amayori.bat: запуск, проверка зависимостей и сборка мозга"},
+    {"id": "golem-integration", "status": "merged", "prs": [1, 10, 11, 13, 14, 15, 16, 17, 18], "description": "Исходный Project Golem, кортекс из переписки, фоновая пересборка с откатом и статусом"},
+    {"id": "postgres-foundation", "status": "merged", "prs": [19], "description": "Опциональная инфраструктура PostgreSQL и pgvector"},
+    {"id": "single-json-memory", "status": "merged", "prs": [20], "description": "Один канонический архив без дублирующих записей"},
+    {"id": "canonical-postgres", "status": "merged", "prs": [22], "description": "PostgreSQL как канонический архив, защищённая миграция и снимок для Голема"},
+    {"id": "pgvector-recall", "status": "merged", "prs": [21, 31], "description": "Семантический поиск по памяти в контексте чата, порог расстояния 0.5"},
+    {"id": "local-inference-removed", "status": "merged", "prs": [23, 27], "description": "Локальный inference добавлен и затем намеренно удалён: поддерживается только Cloud.ru"},
+    {"id": "reviewed-dataset-export", "status": "merged", "prs": [25], "description": "Экспорт только явно одобренных примеров; обучение не запускается"},
+    {"id": "memory-evolution", "status": "merged", "prs": [28, 29, 30, 32, 33], "description": "Версионирование фактов, граф знаний, оценки ответов, конфликты, мосты и следы ответов"},
+    {"id": "golem-standalone", "status": "merged", "prs": [34, 35, 36, 37, 38, 43, 44, 45], "description": "Отдельная страница Голема, восстановление WebGL и резервная карта"},
+    {"id": "bounded-recall", "status": "merged", "prs": [39, 40, 41, 42], "description": "Ограниченный контекст, ранжирование фактов и эпизодов, живая подсветка следов"},
+    {"id": "interface-0-6", "status": "merged", "prs": [46], "description": "Чёрно-золотой интерфейс, отдельные разделы, большой чат и браузерные проверки"}
   ],
-  "pending_pull_requests": [
-    {
-      "number": 21,
-      "status": "open",
-      "feature": "Derived pgvector index",
-      "url": "https://github.com/Aspksa/Amayori/pull/21",
-      "merged": false
-    },
-    {
-      "number": 22,
-      "status": "open",
-      "feature": "PostgreSQL canonical chat storage, guarded migration and Golem snapshot",
-      "url": "https://github.com/Aspksa/Amayori/pull/22",
-      "merged": false
-    },
-    {
-      "number": 23,
-      "status": "open",
-      "feature": "Model-independent inference gateway: Cloud.ru and direct local server without Ollama",
-      "url": "https://github.com/Aspksa/Amayori/pull/23",
-      "merged": false
-    },
-    {
-      "number": 25,
-      "status": "open",
-      "feature": "Explicitly reviewed dataset export for future LoRA training; no weights trained",
-      "url": "https://github.com/Aspksa/Amayori/pull/25",
-      "merged": false
-    }
-  ],
+  "pending_pull_requests": [],
   "roadmap": [
     {
-      "id": "merge-pending",
+      "id": "streaming-and-cancel",
       "priority": 1,
       "status": "planned",
+      "source": "GOLEM-BIG-UPDATE-0.5.md, пункты 49-51",
       "tasks": [
-        "Wait for successful CI for PR 21, 22, 23",
-        "Resolve integration conflicts and run regression tests",
-        "Merge sequentially after verification"
+        "Потоковая выдача ответа Cloud.ru, если API её поддерживает",
+        "Отмена генерации из интерфейса",
+        "Настройка лимитов контекста"
       ]
     },
     {
-      "id": "canonical-postgres",
+      "id": "snapshot-performance",
       "priority": 2,
       "status": "planned",
       "tasks": [
-        "Back up data/chats.json",
-        "Install PostgreSQL and pgvector without Docker",
-        "Migrate chats to canonical PostgreSQL",
-        "Verify counts, history, failure handling, Golem snapshots"
+        "refreshGolemSnapshot перечитывает и перезаписывает весь архив на каждое сообщение",
+        "Сделать обновление data/chats.json и графа инкрементальным либо отложенным",
+        "Измерить на архиве в десятки тысяч сообщений"
       ]
     },
     {
-      "id": "semantic-retrieval",
+      "id": "golem-clusters",
       "priority": 3,
       "status": "planned",
+      "source": "GOLEM-BIG-UPDATE-0.5.md, пункты 24, 30, 32, 33",
       "tasks": [
-        "Connect pgvector semantic recall to chat context",
-        "Test relevance, privacy, latency and fallback",
-        "Deduplicate graph and memory adapters"
+        "Обнаружение кластеров и подписи",
+        "Легенда и фильтры по цветам",
+        "Скрытие слабых связей и режимы 2D/3D"
       ]
     },
     {
-      "id": "local-model",
+      "id": "semantic-highlight",
       "priority": 4,
       "status": "planned",
       "tasks": [
-        "Select open-weight model based on available GPU VRAM",
-        "Direct llama.cpp server integration and performance tests",
-        "Expose provider/model selection in settings"
+        "Подсветка результатов в Големе остаётся лексической",
+        "Связать /api/golem/query с косинусной близостью вместо совпадения слов",
+        "Явно различать в интерфейсе лексический и семантический режим"
       ]
     },
     {
@@ -132,20 +87,30 @@
       "priority": 5,
       "status": "planned",
       "tasks": [
-        "Review and merge PR #25: opt-in training example export",
-        "Curate verified consent-aware training examples",
-        "Version datasets and exclude secrets",
-        "Prototype LoRA/QLoRA with resource checks",
-        "Evaluate candidate models against baseline before activation"
+        "Отбор проверенных примеров с учётом согласия",
+        "Версионирование датасетов и исключение секретов",
+        "Прототип LoRA/QLoRA с проверкой ресурсов",
+        "Сравнение кандидатов с базовой моделью до включения"
       ]
     }
   ],
+  "verification": {
+    "note": "Статус заполняется по результатам запусков, а не по обещаниям",
+    "unit_tests": "npm test — 39 из 39 проходят после npm ci",
+    "browser_tests": "npm run test:ui требует Chromium; запускается отдельно",
+    "not_verified": [
+      "Полный прогон на Windows",
+      "Реальные запросы Cloud.ru",
+      "Реальная установка PostgreSQL с pgvector",
+      "Сборка Python-мозга с загрузкой модели эмбеддингов"
+    ]
+  },
   "acceptance_criteria": [
-    "No data loss on migration",
-    "One canonical memory in configured mode",
-    "No Ollama dependency",
-    "Cloud.ru remains usable during transition",
-    "Project Golem retains original design",
-    "No unverified claim of local model training or CI success"
+    "Нет потери данных при миграции",
+    "Одна каноническая память в выбранном режиме",
+    "Нет зависимости от Ollama и локального inference",
+    "Cloud.ru остаётся рабочим во время изменений",
+    "Project Golem сохраняет исходный визуальный стиль",
+    "Ни одна функция не объявляется готовой и ни один CI — успешным без проверки"
   ]
 }
