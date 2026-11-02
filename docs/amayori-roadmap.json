@@ -1,0 +1,151 @@
+{
+  "schema_version": "1.0.0",
+  "project": "Aspksa/Amayori",
+  "updated_at": "2026-11-02",
+  "language": "ru",
+  "objective": "Единый развивающийся ИИ-мозг: Cloud.ru сейчас, собственная локальная модель и проверяемое дообучение позже",
+  "constraints": {
+    "windows": true,
+    "no_docker": true,
+    "no_ollama": true,
+    "single_launcher": "Amayori.bat",
+    "local_api_keys_only": true,
+    "never_commit_secrets": true,
+    "project_golem_original_visuals": true
+  },
+  "architecture": {
+    "chat": "Cloud.ru now, optional direct llama.cpp-compatible local inference later",
+    "canonical_memory": "data/chats.json on main; PostgreSQL planned in PR #22",
+    "knowledge_visualization": "Project Golem backed by Amayori memory",
+    "vector_search": "Local Golem embeddings on main; derived pgvector index proposed in PR #21",
+    "training": "not implemented"
+  },
+  "delivered": [
+    {
+      "id": "single-launcher",
+      "status": "merged",
+      "pr": 12,
+      "description": "One Amayori.bat launcher and optional brain build"
+    },
+    {
+      "id": "golem-integration",
+      "status": "merged",
+      "prs": [
+        10,
+        11,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18
+      ],
+      "description": "Original Project Golem UI, chat-derived cortex, background rebuild, rollback and status"
+    },
+    {
+      "id": "postgres-foundation",
+      "status": "merged",
+      "pr": 19,
+      "description": "Optional PostgreSQL pgvector infrastructure, not chat retrieval"
+    },
+    {
+      "id": "single-json-memory",
+      "status": "merged",
+      "pr": 20,
+      "description": "One canonical chats.json archive; no duplicate PostgreSQL chat writes"
+    }
+  ],
+  "pending_pull_requests": [
+    {
+      "number": 21,
+      "status": "open",
+      "feature": "Derived pgvector index",
+      "url": "https://github.com/Aspksa/Amayori/pull/21",
+      "merged": false
+    },
+    {
+      "number": 22,
+      "status": "open",
+      "feature": "PostgreSQL canonical chat storage, guarded migration and Golem snapshot",
+      "url": "https://github.com/Aspksa/Amayori/pull/22",
+      "merged": false
+    },
+    {
+      "number": 23,
+      "status": "open",
+      "feature": "Model-independent inference gateway: Cloud.ru and direct local server without Ollama",
+      "url": "https://github.com/Aspksa/Amayori/pull/23",
+      "merged": false
+    },
+    {
+      "number": 25,
+      "status": "open",
+      "feature": "Explicitly reviewed dataset export for future LoRA training; no weights trained",
+      "url": "https://github.com/Aspksa/Amayori/pull/25",
+      "merged": false
+    }
+  ],
+  "roadmap": [
+    {
+      "id": "merge-pending",
+      "priority": 1,
+      "status": "planned",
+      "tasks": [
+        "Wait for successful CI for PR 21, 22, 23",
+        "Resolve integration conflicts and run regression tests",
+        "Merge sequentially after verification"
+      ]
+    },
+    {
+      "id": "canonical-postgres",
+      "priority": 2,
+      "status": "planned",
+      "tasks": [
+        "Back up data/chats.json",
+        "Install PostgreSQL and pgvector without Docker",
+        "Migrate chats to canonical PostgreSQL",
+        "Verify counts, history, failure handling, Golem snapshots"
+      ]
+    },
+    {
+      "id": "semantic-retrieval",
+      "priority": 3,
+      "status": "planned",
+      "tasks": [
+        "Connect pgvector semantic recall to chat context",
+        "Test relevance, privacy, latency and fallback",
+        "Deduplicate graph and memory adapters"
+      ]
+    },
+    {
+      "id": "local-model",
+      "priority": 4,
+      "status": "planned",
+      "tasks": [
+        "Select open-weight model based on available GPU VRAM",
+        "Direct llama.cpp server integration and performance tests",
+        "Expose provider/model selection in settings"
+      ]
+    },
+    {
+      "id": "learning",
+      "priority": 5,
+      "status": "planned",
+      "tasks": [
+        "Review and merge PR #25: opt-in training example export",
+        "Curate verified consent-aware training examples",
+        "Version datasets and exclude secrets",
+        "Prototype LoRA/QLoRA with resource checks",
+        "Evaluate candidate models against baseline before activation"
+      ]
+    }
+  ],
+  "acceptance_criteria": [
+    "No data loss on migration",
+    "One canonical memory in configured mode",
+    "No Ollama dependency",
+    "Cloud.ru remains usable during transition",
+    "Project Golem retains original design",
+    "No unverified claim of local model training or CI success"
+  ]
+}
