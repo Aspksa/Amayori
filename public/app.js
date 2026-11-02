@@ -1,7 +1,7 @@
 (() => {
   "use strict";
   const UI = window.AmayoriUI,
-    { api, icon, notify, empty, mark, date } = UI;
+    { api, icon, notify, empty, mark, preview, date } = UI;
   const $ = (id) => document.getElementById(id);
   const titles = {
     chat: "Диалог",
@@ -345,7 +345,7 @@
       content.className = "archive-text";
       const text = document.createElement("p"),
         meta = document.createElement("small");
-      text.append(mark(item.content.replace(/\s+/g, " "), query));
+      text.append(mark(preview(item.content), query));
       meta.textContent =
         (item.role === "user" ? "Вы" : "Ответ") +
         (date(item.at) ? " · " + date(item.at) : "");
@@ -681,7 +681,9 @@
       };
       $("golem-build-status").textContent =
         (labels[value.state] || "Состояние неизвестно") +
-        (value.nodes ? " · " + value.nodes + " узлов" : "");
+        (value.nodes
+          ? " · " + Number(value.nodes).toLocaleString("ru-RU") + " узлов"
+          : "");
       $("golem-build-status").title = value.error || "";
     } catch {
       $("golem-build-status").textContent = "Нет связи с сервером";

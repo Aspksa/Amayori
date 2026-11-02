@@ -34,6 +34,7 @@ try {
       ...process.env,
       PORT: String(port),
       AMAYORI_GOLEM_AUTO_BUILD: "0",
+      AMAYORI_DERIVED_REFRESH_MS: "0",
       AMAYORI_DATABASE_URL: "",
       AMAYORI_GRAPHITI_BRIDGE_URL: "",
       AMAYORI_EMBEDDING_MODEL: "",
@@ -311,6 +312,15 @@ try {
   assert.equal(await page.locator("#floating-chat").isVisible(), false);
   await page.locator("#archive-search").fill("сад");
   assert.ok((await page.locator("#archive-list mark").count()) > 0);
+  await page.locator("#archive-search").fill("");
+  const archiveText = await page
+    .locator("#archive-list")
+    .evaluate((list) => list.textContent);
+  assert.doesNotMatch(
+    archiveText,
+    /```|\*\*/,
+    "archive previews show text, not Markdown markers",
+  );
   await page.locator("#archive-list .archive-item").first().click();
   await page.waitForURL("**/#chat");
   await page.waitForFunction(

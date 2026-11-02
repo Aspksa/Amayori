@@ -1,6 +1,6 @@
 {
   "name": "amayori",
-  "version": "0.6.2",
+  "version": "0.6.3",
   "private": true,
   "type": "module",
   "scripts": {
@@ -8,6 +8,8 @@
     "test": "node --test",
     "migrate:postgres": "node scripts/migrate-postgres.mjs",
     "training:export": "node scripts/export-reviewed-dataset.mjs",
+    "test:syntax": "node scripts/check-syntax.mjs",
+    "tour": "node scripts/interface-tour.mjs",
     "test:ui": "node scripts/verify-interface.mjs"
   },
   "dependencies": {
