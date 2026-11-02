@@ -16,6 +16,16 @@ if not errorlevel 1 (
  start "" "http://127.0.0.1:57474/"
  exit /b 0
 )
+node.exe scripts\check-dependencies.mjs
+if errorlevel 2 (echo [ERROR] Node.js 22 or newer is required.& pause& exit /b 1)
+if errorlevel 1 (
+ where npm.cmd >nul 2>&1 || (echo [ERROR] npm.cmd is missing. Reinstall Node.js LTS.& pause& exit /b 1)
+ echo [INFO] Installing required packages. Internet is needed on the first run.
+ call npm.cmd ci --ignore-scripts --no-audit --no-fund
+ if errorlevel 1 (echo [ERROR] Package installation failed. Check the internet connection and retry.& pause& exit /b 1)
+ node.exe scripts\check-dependencies.mjs
+ if errorlevel 1 (echo [ERROR] Dependencies are incomplete. Check the installation output.& pause& exit /b 1)
+)
 echo [INFO] Starting Amayori at http://127.0.0.1:57474/
 start "" /min cmd /c "node.exe server.mjs 1>>logs\start.log 2>&1"
 set "READY="
@@ -49,3 +59,4 @@ echo   Amayori.bat              - start the application
 echo   Amayori.bat build-brain  - install Python dependencies and build semantic brain
 echo   Amayori.bat help         - show this help
 exit /b 2
+

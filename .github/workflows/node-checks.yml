@@ -18,7 +18,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
-      - run: npm install --ignore-scripts --no-audit --no-fund
+      - run: npm ci --ignore-scripts --no-audit --no-fund
       - run: npm test
       - run: node --check server.mjs
       - run: node --check public/app.js
@@ -38,3 +38,7 @@ jobs:
       - run: node --check public/golem-immersive.js
       - run: node --check public/golem-fallback.js
       - run: node --check public/knowledge-map.js
+
+      - run: node --check core/chat-memory.mjs
+      - run: node --check public/golem-state.js
+      - run: node --check scripts/check-dependencies.mjs
