@@ -8,7 +8,7 @@ set "LOG=%CD%\logs\start.log"
 where node.exe >nul 2>&1 || (echo [ERROR] Install Node.js LTS.& pause& exit /b 1)
 if not exist "package.json" (echo [ERROR] package.json missing.& pause& exit /b 1)
 echo [INFO] Starting Amayori at http://127.0.0.1:57474/
-start "" /min cmd /c "node.exe server.mjs >> \"%LOG%\" 2>&1"
+start "" /min cmd /c "node.exe server.mjs 1>>logs\start.log 2>&1"
 set "READY="
 for /l %%I in (1,1,30) do (
  if not defined READY (
