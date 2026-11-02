@@ -39,3 +39,45 @@ export async function databaseStatus(){
  if(!enabled())return {enabled:false,connected:false};
  try{const db=await database();const r=await db.query("SELECT EXISTS(SELECT 1 FROM pg_extension WHERE extname='vector') AS vector_enabled");return {enabled:true,connected:true,vectorEnabled:r.rows[0].vector_enabled}}catch(e){return {enabled:true,connected:false,error:e.message}}
 }
+
+export async function ensureCanonicalTable(){
+ const db=await database();if(!db)throw Error('PostgreSQL is required in canonical mode');
+ await db.query(`CREATE TABLE IF NOT EXISTS amayori_chat_log(
+ id BIGSERIAL PRIMARY KEY,
+ role TEXT NOT NULL CHECK(role IN ('user','assistant')),
+ content TEXT NOT NULL,
+ created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+ )`);
+ return db;
+}
+export async function loadCanonicalChats(limit=null){
+ const db=await ensureCanonicalTable();
+ const result=limit===null
+ ?await db.query('SELECT role,content,created_at FROM amayori_chat_log ORDER BY id')
+ :await db.query('SELECT role,content,created_at FROM (SELECT id,role,content,created_at FROM amayori_chat_log ORDER BY id DESC LIMIT $1) t ORDER BY id',[limit]);
+ return result.rows.map(r=>({role:r.role,content:r.content,at:r.created_at.toISOString()}));
+}
+export async function appendCanonicalExchange(user,assistant){
+ const db=await ensureCanonicalTable(),client=await db.connect();
+ try{
+  await client.query('BEGIN');
+  await client.query('INSERT INTO amayori_chat_log(role,content) VALUES($1,$2)', ['user',user]);
+  await client.query('INSERT INTO amayori_chat_log(role,content) VALUES($1,$2)', ['assistant',assistant]);
+  await client.query('COMMIT');
+ }catch(e){await client.query('ROLLBACK');throw e}finally{client.release()}
+}
+export async function importCanonicalChats(messages){
+ if(!Array.isArray(messages))throw Error('Invalid import archive');
+ const db=await ensureCanonicalTable(),client=await db.connect();
+ try{
+  await client.query('BEGIN');
+  const count=await client.query('SELECT COUNT(*)::int AS n FROM amayori_chat_log');
+  if(count.rows[0].n!==0)throw Error('PostgreSQL archive is not empty; migration cancelled');
+  for(const m of messages){
+   if(!m||!['user','assistant'].includes(m.role)||typeof m.content!=='string')continue;
+   const date=m.at&&Number.isFinite(Date.parse(m.at))?m.at:new Date().toISOString();
+   await client.query('INSERT INTO amayori_chat_log(role,content,created_at) VALUES($1,$2,$3)',[m.role,m.content,date]);
+  }
+  await client.query('COMMIT');
+ }catch(e){await client.query('ROLLBACK');throw e}finally{client.release()}
+}

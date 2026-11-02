@@ -1,0 +1,11 @@
+import {read,write} from '../core/store.mjs';
+import {importCanonicalChats,loadCanonicalChats} from '../core/postgres.mjs';
+if(!process.env.AMAYORI_DATABASE_URL)throw Error('Set AMAYORI_DATABASE_URL before migration');
+const local=await read('chats.json',[]);
+if(!Array.isArray(local))throw Error('Invalid local chat archive');
+await importCanonicalChats(local);
+const imported=await loadCanonicalChats();
+const expected=local.filter(m=>m&&['user','assistant'].includes(m.role)&&typeof m.content==='string');
+if(imported.length!==expected.length)throw Error('Migration count mismatch');
+await write('chats.json',imported);
+console.log('PostgreSQL canonical migration complete:',imported.length,'messages. Keep a backup of your original archive.');
