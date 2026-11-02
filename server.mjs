@@ -15,6 +15,13 @@ const defaultSettings={model:'',endpoint:'https://foundation-models.api.cloud.ru
 const settings=()=>read('cloudru-settings.json',defaultSettings);
 const server=http.createServer(async(req,res)=>{
  try{
+  const expected='127.0.0.1:'+port;
+  if(req.headers.host!==expected&&req.headers.host!=='localhost:'+port)return json(res,403,{error:'Недопустимый Host'});
+  if(req.method==='POST'){
+   const origin=req.headers.origin;
+   if(origin&&origin!=='http://'+expected&&origin!=='http://localhost:'+port)return json(res,403,{error:'Запрос с другого сайта запрещён'});
+   if(!req.headers['content-type']?.toLowerCase().startsWith('application/json'))return json(res,415,{error:'Требуется application/json'});
+  }
   const url=new URL(req.url,'http://localhost'),p=url.pathname;
   if(req.method==='GET'&&p==='/api/health')return json(res,200,{ok:true,name:'Amayori',version:'0.2.0'});
   if(req.method==='GET'&&p==='/api/settings'){const s=await settings();return json(res,200,{model:s.model,endpoint:s.endpoint,hasKey:!!s.apiKey})}
