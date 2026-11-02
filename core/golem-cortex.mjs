@@ -1,0 +1,4 @@
+// Golem-compatible cortex projection for the existing local memory graph.
+// Coordinates are a deterministic preview, NOT UMAP embeddings.
+export function cortexFromGraph(graph){const nodes=(graph.nodes||[]).slice(0,900);return nodes.map((n,i)=>{const a=i*2.399963229728653, z=1-2*(i+.5)/Math.max(nodes.length,1), radius=Math.sqrt(Math.max(0,1-z*z));return {id:n.id,title:n.label||n.id,cat:'Диалоги',col:[.69,.22,.30],pos:[Math.cos(a)*radius*12,Math.sin(a)*radius*12,z*12],count:n.count||1}})}
+export function searchCortex(nodes,query){const terms=String(query).toLocaleLowerCase('ru').split(/\s+/).filter(Boolean);return nodes.map((n,i)=>({i,score:terms.reduce((sum,t)=>sum+(String(n.title).toLocaleLowerCase('ru').includes(t)?1:0),0)})).filter(x=>x.score>0).sort((a,b)=>b.score-a.score).slice(0,30).map(x=>x.i)}
