@@ -16,6 +16,15 @@ const defaultSettings={model:'',endpoint:'https://foundation-models.api.cloud.ru
 const settings=()=>read('cloudru-settings.json',defaultSettings);
 const server=http.createServer(async(req,res)=>{
  try{
+  const requestHost=req.headers.host||'';
+  if(!/^127[.]0[.]0[.]1(?::[0-9]+)?$/.test(requestHost)&&!/^localhost(?::[0-9]+)?$/i.test(requestHost))return json(res,403,{error:'Недопустимый Host'});
+  if(req.method==='POST'){
+   const origin=req.headers.origin;
+   if(origin){let parsed;try{parsed=new URL(origin)}catch{return json(res,403,{error:'Недопустимый Origin'})}
+    if(parsed.protocol!=='http:'||!['127.0.0.1','localhost'].includes(parsed.hostname)||parsed.port!==String(port))return json(res,403,{error:'Недопустимый Origin'});
+   }
+   if(!(req.headers['content-type']||'').toLowerCase().startsWith('application/json'))return json(res,415,{error:'Ожидается application/json'});
+  }
   const url=new URL(req.url,'http://localhost'),p=url.pathname;
   if(req.method==='GET'&&p==='/api/health')return json(res,200,{ok:true,name:'Amayori',version:'0.4.2'});
   if(req.method==='GET'&&p==='/api/settings'){const s=await settings();return json(res,200,{model:s.model,endpoint:s.endpoint,hasKey:!!s.apiKey})}
