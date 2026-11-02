@@ -414,6 +414,19 @@ try {
     "Connection and brain forms work; secrets clear after saving; appearance preferences persist",
   );
 
+  // Capture the activity stream the Golem subscribes to, so the live channel is
+  // verified end to end without needing a real Cloud.ru answer.
+  await context.addInitScript(() => {
+    globalThis.__streams = [];
+    globalThis.EventSource = class extends EventTarget {
+      constructor(url) {
+        super();
+        this.url = String(url);
+        globalThis.__streams.push(this);
+      }
+      close() {}
+    };
+  });
   const popupPromise = context.waitForEvent("page");
   await page.locator('a[href="/golem"]').click();
   const popup = await popupPromise;
@@ -489,6 +502,22 @@ try {
       assert.ok(pixels > 100, "Golem draws nodes after context recovery");
     }
   } else assert.equal(await popup.locator("#fallback-brain").isVisible(), true);
+  assert.match(
+    await popup.evaluate(() => globalThis.__streams?.[0]?.url || ""),
+    /\/api\/golem\/stream$/,
+    "Golem subscribes to the live activity stream",
+  );
+  await popup.evaluate(() =>
+    globalThis.__streams[0].dispatchEvent(
+      new MessageEvent("message", {
+        data: JSON.stringify({type: "build", state: "building"}),
+      }),
+    ),
+  );
+  await popup.waitForFunction(() =>
+    document.getElementById("notice").textContent.includes("Пересобираю"),
+  );
+  checks.push("Голем подписан на поток активности и реагирует на события");
   await popup.close();
   checks.push(
     "Golem opens separately without toolbar clutter and recovers from GPU context loss",

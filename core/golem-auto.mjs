@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {spawn} from 'node:child_process';
+import {emit} from './events.mjs';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const source=path.join(root,'data','chats.json');
 const folder=path.join(root,'data','golem');
@@ -18,7 +19,7 @@ export async function checkGolemBrain(){
  const stats=await Promise.all(files.map(n=>fs.stat(path.join(folder,n)).catch(()=>null)));
  let fresh=stats.every(x=>x&&x.mtimeMs>=src.mtimeMs);
  if(fresh){try{const meta=JSON.parse(await fs.readFile(path.join(folder,'metadata.json'),'utf8'));fresh=meta.source==='chats.json';if(fresh){status={state:'ready',nodes:meta.nodes||0,updatedAt:new Date(stats[0].mtimeMs).toISOString(),error:null};return;}}catch{fresh=false}}
- running=true;status={...status,state:'building',error:null};
+ running=true;status={...status,state:'building',error:null};emit('build',{state:'building'});
  const script=path.join(root,'integrations','golem','auto_build.py');
  const args=python==='py'?['-3',script]:[script];
  const child=spawn(python,args,{cwd:root,windowsHide:true,stdio:['ignore','ignore','pipe']});
@@ -26,8 +27,8 @@ export async function checkGolemBrain(){
  const timeout=setTimeout(()=>{child.kill();done('Build timed out after 20 minutes')},1200000);
  const done=(error)=>{
   if(finished)return;finished=true;clearTimeout(timeout);running=false;
-  if(error){failures++;lastFailure=Date.now();status={...status,state:'error',error:String(error).slice(-500)};console.warn('Golem auto build:',error);}
-  else{failures=0;lastFailure=0;status={...status,state:'ready',updatedAt:new Date().toISOString(),error:null};void fs.readFile(path.join(folder,'metadata.json'),'utf8').then(x=>{status.nodes=JSON.parse(x).nodes||0}).catch(()=>{});}
+  if(error){failures++;lastFailure=Date.now();status={...status,state:'error',error:String(error).slice(-500)};emit('build',{state:'error'});console.warn('Golem auto build:',error);}
+  else{failures=0;lastFailure=0;status={...status,state:'ready',updatedAt:new Date().toISOString(),error:null};emit('build',{state:'ready'});void fs.readFile(path.join(folder,'metadata.json'),'utf8').then(x=>{status.nodes=JSON.parse(x).nodes||0}).catch(()=>{});}
  };
  child.stderr.on('data',d=>{stderr=(stderr+d.toString()).slice(-3000)});
  child.on('error',e=>done(e.message));

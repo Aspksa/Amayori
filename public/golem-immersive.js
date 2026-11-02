@@ -23,7 +23,7 @@ try {
   if (response.ok) preferences = normalizeGolemSettings(await response.json());
 } catch (error) { console.warn('Golem settings:', error.message); }
 
-const MAX_NODES = 1200, MAX_EDGES = 1500, MAX_PULSES = 24;
+const MAX_NODES = 1200, MAX_EDGES = 1500, MAX_PULSES = 40, DUST = 900;
 // Warm tones only: the Golem keeps the obsidian-and-gold palette of the app.
 const CLUSTER_COLORS = [0xf2cd87, 0xf4e6c4, 0xc8873f, 0xcdb87e, 0x9d8f5e, 0x8c8794];
 const TRACE_COLOR = 0xffd47c;
@@ -70,15 +70,66 @@ const edgeMesh = new THREE.LineSegments(edgeGeometry, new THREE.LineBasicMateria
 edgeMesh.frustumCulled = false;
 brain.add(edgeMesh);
 
-// Travelling dots along the edges the last answer actually used.
+// A soft additive halo per node. Real bloom needs post-processing passes that
+// would have to be served from three/examples; this costs one draw call.
+function haloTexture() {
+  const size = 64, surface = document.createElement('canvas');
+  surface.width = surface.height = size;
+  const paint = surface.getContext('2d');
+  const gradient = paint.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+  gradient.addColorStop(0, 'rgba(255,245,215,.95)');
+  gradient.addColorStop(0.35, 'rgba(255,225,165,.34)');
+  gradient.addColorStop(1, 'rgba(255,215,150,0)');
+  paint.fillStyle = gradient;
+  paint.fillRect(0, 0, size, size);
+  const texture = new THREE.CanvasTexture(surface);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+const halo = haloTexture();
+const glowGeometry = new THREE.BufferGeometry();
+const glowPositions = new Float32Array(MAX_NODES * 3);
+const glowColors = new Float32Array(MAX_NODES * 3);
+glowGeometry.setAttribute('position', new THREE.BufferAttribute(glowPositions, 3).setUsage(THREE.DynamicDrawUsage));
+glowGeometry.setAttribute('color', new THREE.BufferAttribute(glowColors, 3).setUsage(THREE.DynamicDrawUsage));
+const glowMaterial = new THREE.PointsMaterial({
+  map: halo, vertexColors: true, transparent: true, opacity: 0.34, size: 14,
+  sizeAttenuation: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
+});
+const glowMesh = new THREE.Points(glowGeometry, glowMaterial);
+glowMesh.frustumCulled = false;
+brain.add(glowMesh);
+
+// Far dust gives the void a parallax and keeps the brain from floating in nothing.
+const dustGeometry = new THREE.BufferGeometry();
+const dustPositions = new Float32Array(DUST * 3);
+for (let i = 0; i < DUST; i++) {
+  const angle = i * 2.399963229728653, z = 1 - 2 * (i + 0.5) / DUST;
+  const ring = Math.sqrt(Math.max(0, 1 - z * z));
+  const radius = 430 + ((Math.sin(i * 7.17) + 1) / 2) * 320;
+  dustPositions[i * 3] = Math.cos(angle) * ring * radius;
+  dustPositions[i * 3 + 1] = Math.sin(angle) * ring * radius;
+  dustPositions[i * 3 + 2] = z * radius;
+}
+dustGeometry.setAttribute('position', new THREE.BufferAttribute(dustPositions, 3));
+const dust = new THREE.Points(dustGeometry, new THREE.PointsMaterial({
+  map: halo, color: 0xb9a680, transparent: true, opacity: 0.22, size: 7,
+  sizeAttenuation: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
+}));
+dust.frustumCulled = false;
+scene.add(dust);
+
+// Travelling dots: bright for the last answer, faint for the resting state.
 const pulseMesh = new THREE.InstancedMesh(
   new THREE.SphereGeometry(1, 8, 6),
   new THREE.MeshBasicMaterial({
-    color: 0xffeec0, transparent: true, opacity: 0.95,
-    blending: THREE.AdditiveBlending, depthWrite: false,
+    color: 0xffffff, transparent: true, opacity: 0.95,
+    blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
   }),
   MAX_PULSES,
 );
+pulseMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(MAX_PULSES * 3), 3);
+pulseMesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
 pulseMesh.frustumCulled = false;
 pulseMesh.count = 0;
 brain.add(pulseMesh);
@@ -95,6 +146,7 @@ let pulses = [];
 let activeFactIds = new Set(), highlightedNodes = new Set();
 let selected = null, loading = false, lastFingerprint = '', contextLost = false;
 let frameAverage = 16.7, lastHeartbeat = -Infinity, previousTraceId = null;
+let activity = 0, lastSpark = 0;
 
 const matrix = new THREE.Matrix4();
 const colorScratch = new THREE.Color();
@@ -171,6 +223,9 @@ function uploadNodes() {
   nodeMesh.count = count;
   nodeMesh.instanceMatrix.needsUpdate = true;
   nodeMesh.computeBoundingSphere();
+  glowPositions.set(positions.subarray(0, count * 3));
+  glowGeometry.setDrawRange(0, count);
+  glowGeometry.attributes.position.needsUpdate = true;
 }
 
 function uploadEdges() {
@@ -368,6 +423,16 @@ function paintNodes() {
     nodeMesh.setColorAt(i, colorScratch);
   }
   if (nodeMesh.instanceColor) nodeMesh.instanceColor.needsUpdate = true;
+  for (let i = 0; i < count; i++) {
+    const cluster = clusters[clusterOf[i]];
+    colorScratch.setHex(highlightedNodes.has(i) ? TRACE_COLOR
+      : cluster ? cluster.color : CLUSTER_COLORS[i % CLUSTER_COLORS.length]);
+    colorScratch.multiplyScalar(placeholderMode ? 0.3 : highlightedNodes.has(i) ? 1 : 0.6);
+    glowColors[i * 3] = colorScratch.r;
+    glowColors[i * 3 + 1] = colorScratch.g;
+    glowColors[i * 3 + 2] = colorScratch.b;
+  }
+  glowGeometry.attributes.color.needsUpdate = true;
 }
 
 function paintEdges() {
@@ -474,32 +539,96 @@ function populate(data) {
 }
 
 function buildPulses() {
-  pulses = [];
-  if (placeholderMode) { pulseMesh.count = 0; return; }
+  pulses = pulses.filter((pulse) => pulse.idle);
+  if (placeholderMode) { pulses = []; pulseMesh.count = 0; return; }
   for (let e = 0; e < edges.length && pulses.length < MAX_PULSES; e++)
-    if (activeFactIds.has(edges[e].factId)) pulses.push({edge: e, phase: noise(e, 7)});
+    if (activeFactIds.has(edges[e].factId)) pulses.push({edge: e, phase: noise(e, 7), idle: false});
   pulseMesh.count = pulses.length;
 }
 
+// Resting activity: the brain keeps firing quietly between questions.
+function restingSpark() {
+  if (reduced || placeholderMode || !edges.length || pulses.length >= MAX_PULSES) return;
+  pulses.push({edge: Math.floor(Math.random() * edges.length), phase: 0, idle: true});
+}
+
 function updatePulses(delta) {
-  if (!pulses.length) return;
-  const speed = reduced ? 0 : delta * 0.00055;
+  if (!pulses.length) { pulseMesh.count = 0; return; }
+  const step = reduced ? 0 : delta * 0.00035;
   const size = 1.5 * (preferences.nodeSize / 2) + 1;
-  for (let p = 0; p < pulses.length; p++) {
-    const pulse = pulses[p];
-    pulse.phase = (pulse.phase + speed) % 1;
+  let written = 0;
+  for (const pulse of pulses) {
+    pulse.phase += step * (pulse.idle ? 0.55 : 0.9 + activity * 1.9);
+    if (pulse.idle) { if (pulse.phase >= 1) continue; }
+    else pulse.phase %= 1;
     const edge = edges[pulse.edge];
-    if (!edge) continue;
+    if (!edge || written >= MAX_PULSES) continue;
     const a = edge.a * 3, b = edge.b * 3, t = pulse.phase;
-    matrix.makeScale(size, size, size);
+    const scale = pulse.idle ? size * 0.5 : size * (0.85 + activity * 0.55);
+    matrix.makeScale(scale, scale, scale);
     matrix.setPosition(
       positions[a] + (positions[b] - positions[a]) * t,
       positions[a + 1] + (positions[b + 1] - positions[a + 1]) * t,
       positions[a + 2] + (positions[b + 2] - positions[a + 2]) * t,
     );
-    pulseMesh.setMatrixAt(p, matrix);
+    pulseMesh.setMatrixAt(written, matrix);
+    colorScratch.setHex(pulse.idle ? 0x6f6450 : 0xffeec0);
+    pulseMesh.setColorAt(written, colorScratch);
+    written++;
   }
+  pulses = pulses.filter((pulse) => !(pulse.idle && pulse.phase >= 1));
+  pulseMesh.count = written;
   pulseMesh.instanceMatrix.needsUpdate = true;
+  if (pulseMesh.instanceColor) pulseMesh.instanceColor.needsUpdate = true;
+}
+
+// Live channel: the page used to learn about a finished answer up to 12 seconds
+// late. These events arrive while the work is still happening.
+function handleEvent(data) {
+  switch (data.type) {
+    case 'question': activity = Math.max(activity, 0.6); break;
+    case 'recall':
+      activeFactIds = new Set((data.factIds || []).map(String));
+      applyTrace();
+      activity = 1;
+      break;
+    case 'asking':
+    case 'token':
+      activity = 1;
+      break;
+    case 'answer':
+      if (data.traceId) previousTraceId = String(data.traceId);
+      activity = 1;
+      break;
+    case 'facts':
+      activity = Math.max(activity, 0.7);
+      for (let i = 0; i < 6; i++) restingSpark();
+      break;
+    case 'index':
+      activity = Math.max(activity, 0.4);
+      restingSpark(); restingSpark();
+      break;
+    case 'build':
+      notice.textContent = data.state === 'building' ? 'Пересобираю карту памяти…'
+        : data.state === 'error' ? 'Пересборка карты не удалась' : 'Карта памяти обновлена';
+      if (data.state === 'ready') { lastFingerprint = ''; refresh(); }
+      break;
+    default: break;
+  }
+}
+
+function connectStream() {
+  if (typeof EventSource === 'undefined') return;
+  let source;
+  try { source = new EventSource('/api/golem/stream'); } catch (error) {
+    console.warn('Golem activity stream:', error.message);
+    return;
+  }
+  source.addEventListener('message', (event) => {
+    let data;
+    try { data = JSON.parse(event.data); } catch { return; }
+    if (data && typeof data.type === 'string') handleEvent(data);
+  });
 }
 
 function applyTrace() {
@@ -677,6 +806,7 @@ resize();
 populate({nodes: [], edges: []});
 refresh();
 refreshTraces();
+connectStream();
 setInterval(() => { if (!document.hidden) { refresh(); refreshTraces(); } }, 12000);
 
 let previous = 0;
@@ -699,6 +829,14 @@ function animate(now) {
     uploadNodes();
     uploadEdges();
   }
+  activity = Math.max(0, activity - delta * 0.00045);
+  if (now - lastSpark > (activity > 0.2 ? 240 : 950)) { lastSpark = now; restingSpark(); }
+  // Breathing: the brain is never a still frame, even with nothing to answer.
+  const breath = reduced ? 0 : Math.sin(now * 0.00055);
+  keyLight.intensity = 1.75 + breath * 0.18 + activity * 0.55;
+  glowMaterial.opacity = 0.3 + breath * 0.05 + activity * 0.26;
+  brain.scale.setScalar(1 + breath * 0.006);
+  dust.rotation.y -= delta * 0.000012;
   if (preferences.autoRotate && !reduced && !drag) want.theta += delta * 0.00008;
   if (!drag && Math.abs(spin) > 0.00002) { want.theta += spin; spin *= 0.94; }
   orbit.theta += (want.theta - orbit.theta) * 0.16;

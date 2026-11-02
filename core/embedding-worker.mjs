@@ -1,5 +1,6 @@
 import {pendingChatEmbeddings,storeChatEmbedding,embeddingProgress} from './postgres.mjs';
 import {cloudEmbedding} from './cloud-embedding.mjs';
+import {emit} from './events.mjs';
 let running=false, lastError=null, lastRun=null;
 export const embeddingJobStatus=()=>({running,lastError,lastRun});
 export async function runEmbeddingBatch(settings,model,{limit=3}={}){
@@ -9,7 +10,7 @@ export async function runEmbeddingBatch(settings,model,{limit=3}={}){
  let indexed=0;
  try{
   const pending=await pendingChatEmbeddings(limit);
-  for(const item of pending){const vector=await cloudEmbedding(settings,item.content,model);await storeChatEmbedding(item,vector);indexed++}
+  for(const item of pending){const vector=await cloudEmbedding(settings,item.content,model);await storeChatEmbedding(item,vector);indexed++;emit('index',{messageId:String(item.id),indexed})}
   lastRun=new Date().toISOString();
   return {indexed,...await embeddingProgress()};
  }catch(e){lastError=e.message;throw e}finally{running=false}
