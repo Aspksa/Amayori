@@ -71,4 +71,4 @@ const server=http.createServer(async(req,res)=>{
   res.writeHead(200,{'Content-Type':types[path.extname(name)],'X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; object-src 'none'; frame-ancestors 'none'"});res.end(content);
  }catch(e){console.error(e);json(res,e instanceof SyntaxError?400:500,{error:e instanceof SyntaxError?'Неверный JSON':(e.message||'Ошибка сервера')})}
 });
-server.listen(port,host,()=>{console.log('Amayori ready: http://'+host+':'+port+'/');startGolemBrainAutomation();void initDatabase().then(()=>refreshGolemSnapshot()).catch(e=>console.warn('PostgreSQL initialization failed:',e.message))});
+server.listen(port,host,()=>{console.log('Amayori ready: http://'+host+':'+port+'/');startGolemBrainAutomation();void initDatabase().then(async()=>{if(postgresCanonical()){await chatHistory(1);await refreshGolemSnapshot()}}).catch(e=>console.warn('PostgreSQL initialization/migration check:',e.message))});
