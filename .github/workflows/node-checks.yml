@@ -26,3 +26,7 @@ jobs:
       - run: node --check core/bridges.mjs
       - run: node --check public/golem-view.js
       - run: node --check core/golem-cortex.mjs
+      - run: node --check core/golem-data.mjs
+      - run: node --check core/cloud-client.mjs
+      - run: node --check core/store.mjs
+
