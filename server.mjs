@@ -13,7 +13,7 @@ import {runEmbeddingBatch,embeddingJobStatus} from './core/embedding-worker.mjs'
 import {initDatabase,databaseStatus,saveFact,findFacts,knowledgeGraph,saveFeedback,feedbackStats,golemKnowledgePage,golemVectorStatus,golemFactSource,golemSimilar,embeddingProgress,recentUserMessageId,knowledgeConflicts,relatedFacts,golemTraceStore,golemTraces,golemImmuneReport,golemBridges} from './core/postgres.mjs';
 const root=path.dirname(fileURLToPath(import.meta.url));
 const host='127.0.0.1',port=Number(process.env.PORT||57474);
-const routes={'/golem':'golem.html','/golem.html':'golem.html','/':'index.html','/index.html':'index.html','/style.css':'style.css','/chat-avatar.js':'chat-avatar.js','/app.js':'app.js','/knowledge-map.js':'knowledge-map.js','/golem-knowledge-tools.js':'golem-knowledge-tools.js','/golem-six.js':'golem-six.js'};
+const routes={'/golem':'golem.html','/golem.html':'golem.html','/golem-immersive.js':'golem-immersive.js','/golem-immersive.css':'golem-immersive.css','/':'index.html','/index.html':'index.html','/style.css':'style.css','/chat-avatar.js':'chat-avatar.js','/app.js':'app.js','/knowledge-map.js':'knowledge-map.js','/golem-knowledge-tools.js':'golem-knowledge-tools.js','/golem-six.js':'golem-six.js'};
 const types={'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8'};
 const json=(res,code,data)=>{res.writeHead(code,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(JSON.stringify(data))};
 async function body(req){let data='';for await(const part of req){data+=part;if(data.length>30000)throw Error('Слишком большой запрос')}return JSON.parse(data||'{}')}
