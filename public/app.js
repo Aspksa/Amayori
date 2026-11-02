@@ -22,26 +22,32 @@
   let archive = [],
     archiveLoaded = false,
     modelRequest = null;
-  function navigate() {
-    const parts = location.hash.slice(1).split("/");
-    const page = Object.hasOwn(titles, parts[0]) ? parts[0] : "chat";
-    const tab = groups[page]?.includes(parts[1]) ? parts[1] : groups[page]?.[0];
-    state.page = page;
+  UI.isViewVisible = (page) =>
+    (state.visiblePages || [state.page]).includes(page);
+  function renderWorkspace(page, tab, rememberContext = false) {
+    const layout = UI.workspace.apply(page, tab, rememberContext);
+    state.visiblePages = layout.visiblePages;
+    state.split = layout.split;
     document.documentElement.dataset.page = page;
     document
       .querySelectorAll("#workspace > [data-view]")
-      .forEach((view) => (view.hidden = view.dataset.view !== page));
+      .forEach(
+        (view) =>
+          (view.hidden = !layout.visiblePages.includes(view.dataset.view)),
+      );
     document.querySelectorAll(".nav-link[data-page]").forEach((link) => {
       if (link.dataset.page === page) link.setAttribute("aria-current", "page");
       else link.removeAttribute("aria-current");
     });
     for (const [name, tabs] of Object.entries(groups)) {
       const current =
-        name === page
-          ? tab
-          : tabs.find(
-              (t) => $("tab-" + t).getAttribute("aria-selected") === "true",
-            ) || tabs[0];
+        name === "memory" && layout.split && layout.content === "archive"
+          ? "archive"
+          : name === page
+            ? tab
+            : tabs.find(
+                (t) => $("tab-" + t).getAttribute("aria-selected") === "true",
+              ) || tabs[0];
       for (const t of tabs) {
         const active = t === current;
         $("tab-" + t).setAttribute("aria-selected", String(active));
@@ -49,18 +55,32 @@
         $(name + "-" + t).hidden = !active;
       }
     }
+    document.dispatchEvent(
+      new CustomEvent("amayori-view", { detail: { page, tab, ...layout } }),
+    );
+  }
+  function refreshVisibleMemory() {
+    if (!UI.isViewVisible("memory")) return;
+    void refreshMemory();
+    if (!$("memory-archive").hidden) void loadArchive();
+    if (!$("memory-facts").hidden) void loadFacts();
+    if (!$("memory-quality").hidden) void loadQuality();
+  }
+  function navigate() {
+    const parts = location.hash.slice(1).split("/");
+    const page = Object.hasOwn(titles, parts[0]) ? parts[0] : "chat";
+    const tab = groups[page]?.includes(parts[1]) ? parts[1] : groups[page]?.[0];
+    state.page = page;
+    state.tab = tab;
+    renderWorkspace(page, tab, true);
     $("view-title").textContent = titles[page];
     document.title = titles[page] + " · Amayori";
-    document.dispatchEvent(
-      new CustomEvent("amayori-view", { detail: { page, tab } }),
-    );
-    if (page === "memory") {
-      void refreshMemory();
-      if (tab === "archive") void loadArchive();
-      if (tab === "facts") void loadFacts();
-      if (tab === "quality") void loadQuality();
-    }
+    refreshVisibleMemory();
   }
+  UI.refreshWorkspace = () => {
+    renderWorkspace(state.page, state.tab);
+    refreshVisibleMemory();
+  };
   UI.navigate = (page, tab) => {
     const target = "#" + page + (tab ? "/" + tab : "");
     if (location.hash === target) navigate();
@@ -694,7 +714,7 @@
   );
   document.addEventListener("amayori-chat-updated", () => {
     void refreshMemory();
-    if (state.page === "memory") {
+    if (UI.isViewVisible("memory")) {
       void loadArchive();
       if (!$("memory-facts").hidden) void loadFacts();
     }
@@ -702,14 +722,14 @@
   addEventListener("storage", (event) => {
     if (event.key === "amayori-chat-update") {
       void refreshMemory();
-      if (state.page === "memory") void loadArchive();
+      if (UI.isViewVisible("memory")) void loadArchive();
     }
   });
   void loadConfig();
   void refreshMemory();
   void buildStatus();
   setInterval(() => {
-    if (!document.hidden && state.page !== "chat") {
+    if (!document.hidden && (state.page !== "chat" || state.split)) {
       void refreshMemory();
       if (state.page === "settings") void buildStatus();
     }

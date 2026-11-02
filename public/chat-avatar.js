@@ -273,32 +273,45 @@
       historyLoaded = true;
     }
   }
-  function placeChat(page) {
-    const docked = page === "chat";
+  function placeChat(page, visiblePages = UI.state.visiblePages || [page]) {
+    const docked = visiblePages.includes("chat"),
+      changed = panel.parentElement !== (docked ? mount : document.body);
     panel.classList.toggle("floating", !docked);
-    panel.classList.remove("expanded");
     panel.setAttribute("role", docked ? "region" : "dialog");
     panel.removeAttribute("aria-modal");
-    if (docked) {
-      mount.append(panel);
-      panel.hidden = false;
-      avatar.hidden = true;
-    } else {
-      document.body.append(panel);
+    avatar.hidden = docked;
+    if (changed) {
+      panel.classList.remove("expanded");
+      if (docked) {
+        mount.append(panel);
+        panel.hidden = false;
+      } else {
+        document.body.append(panel);
+        panel.hidden = true;
+      }
+      avatar.setAttribute("aria-expanded", "false");
+      closeMenu();
+    } else if (docked) panel.hidden = false;
+    if (!docked) {
+      panel.classList.remove("expanded");
       panel.hidden = true;
-      avatar.hidden = false;
+      avatar.setAttribute("aria-expanded", "false");
+      closeMenu();
     }
-    avatar.setAttribute("aria-expanded", "false");
-    $("chat-expand").innerHTML = icon("expand");
-    $("chat-expand").setAttribute("aria-label", "Развернуть диалог");
-    closeMenu();
+    $("chat-expand").innerHTML = icon(
+      panel.classList.contains("expanded") ? "collapse" : "expand",
+    );
+    $("chat-expand").setAttribute(
+      "aria-label",
+      docked && UI.state.split ? "Диалог на весь экран" : "Развернуть диалог",
+    );
     requestAnimationFrame(() => {
       composeState();
-      if (docked) scrollEnd();
+      if (changed && docked) scrollEnd();
     });
   }
   function toggleOverlay() {
-    if (UI.state.page === "chat") {
+    if (UI.isViewVisible("chat")) {
       input.focus();
       return;
     }
@@ -318,11 +331,16 @@
     avatar.focus();
   }
   document.addEventListener("amayori-view", (event) =>
-    placeChat(event.detail.page),
+    placeChat(event.detail.page, event.detail.visiblePages),
   );
   placeChat(UI.state.page);
   $("chat-close").addEventListener("click", closeOverlay);
   $("chat-expand").addEventListener("click", () => {
+    if (!panel.classList.contains("floating") && UI.state.split) {
+      UI.workspace.updateSplit({ enabled: false });
+      UI.navigate("chat");
+      return;
+    }
     const expanded = panel.classList.toggle("expanded");
     $("chat-expand").innerHTML = icon(expanded ? "collapse" : "expand");
     $("chat-expand").setAttribute(
@@ -376,7 +394,8 @@
   $("chat-search").addEventListener("input", filterHistory);
   $("chat-search-close").addEventListener("click", closeSearch);
   document.addEventListener("keydown", (event) => {
-    if (event.key !== "Escape" || panel.hidden) return;
+    if (event.defaultPrevented || event.key !== "Escape" || panel.hidden)
+      return;
     if (!$("chat-menu").hidden) {
       closeMenu();
       $("chat-more").focus();

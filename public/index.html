@@ -21,49 +21,65 @@
         ><span class="rail-label">Amayori</span></a
       >
       <nav class="rail-nav" aria-label="Основные разделы">
-        <a
-          href="#chat"
-          class="nav-link"
-          data-page="chat"
-          aria-label="Диалог"
-          data-tip="Диалог"
-          aria-current="page"
-          ><svg aria-hidden="true" class="icon">
-            <use href="/icons.svg#chat"></use></svg
-          ><span class="rail-label">Диалог</span></a
+        <div id="nav-pinned" class="nav-pinned">
+          <a
+            href="#chat"
+            class="nav-link"
+            data-page="chat"
+            aria-label="Диалог"
+            data-tip="Диалог"
+            aria-current="page"
+            ><svg aria-hidden="true" class="icon">
+              <use href="/icons.svg#chat"></use></svg
+            ><span class="rail-label">Диалог</span></a
+          >
+          <a
+            href="#memory"
+            class="nav-link"
+            data-page="memory"
+            aria-label="Память"
+            data-tip="Память"
+            ><svg aria-hidden="true" class="icon">
+              <use href="/icons.svg#archive"></use></svg
+            ><span class="rail-label">Память</span></a
+          >
+          <a
+            href="#graph"
+            class="nav-link"
+            data-page="graph"
+            aria-label="Карта знаний"
+            data-tip="Карта знаний"
+            ><svg aria-hidden="true" class="icon">
+              <use href="/icons.svg#graph"></use></svg
+            ><span class="rail-label">Карта знаний</span></a
+          >
+
+          <a
+            href="/golem"
+            target="_blank"
+            rel="noopener"
+            class="nav-link"
+            aria-label="Голем — новое окно"
+            data-tip="Голем · новое окно"
+            ><svg aria-hidden="true" class="icon">
+              <use href="/icons.svg#brain"></use></svg
+            ><span class="rail-label">Голем</span></a
+          >
+        </div>
+        <button
+          id="nav-more"
+          class="nav-link nav-more-trigger"
+          type="button"
+          aria-label="Ещё"
+          data-tip="Ещё"
+          aria-expanded="false"
+          aria-controls="nav-overflow"
+          hidden
         >
-        <a
-          href="#memory"
-          class="nav-link"
-          data-page="memory"
-          aria-label="Память"
-          data-tip="Память"
-          ><svg aria-hidden="true" class="icon">
-            <use href="/icons.svg#archive"></use></svg
-          ><span class="rail-label">Память</span></a
-        >
-        <a
-          href="#graph"
-          class="nav-link"
-          data-page="graph"
-          aria-label="Карта знаний"
-          data-tip="Карта знаний"
-          ><svg aria-hidden="true" class="icon">
-            <use href="/icons.svg#graph"></use></svg
-          ><span class="rail-label">Карта знаний</span></a
-        >
-        <div class="rail-divider"></div>
-        <a
-          href="/golem"
-          target="_blank"
-          rel="noopener"
-          class="nav-link"
-          aria-label="Голем — новое окно"
-          data-tip="Голем · новое окно"
-          ><svg aria-hidden="true" class="icon">
-            <use href="/icons.svg#brain"></use></svg
-          ><span class="rail-label">Голем</span></a
-        >
+          <svg class="icon" aria-hidden="true">
+            <use href="/icons.svg#more"></use></svg
+          ><span class="rail-label">Ещё</span>
+        </button>
       </nav>
       <div class="rail-bottom">
         <a
@@ -86,6 +102,18 @@
         </div>
         <div class="topbar-actions">
           <button
+            id="workspace-toggle"
+            class="icon-button workspace-toggle"
+            type="button"
+            aria-label="Разделить рабочее место"
+            aria-pressed="false"
+            title="Чат рядом с картой или архивом"
+          >
+            <svg class="icon" aria-hidden="true">
+              <use href="/icons.svg#panels"></use>
+            </svg>
+          </button>
+          <button
             class="icon-button"
             id="global-search"
             aria-label="Поиск в архиве (Ctrl+K)"
@@ -104,12 +132,34 @@
         </div>
       </header>
       <main id="workspace">
+        <div
+          id="workspace-separator"
+          class="workspace-separator"
+          role="separator"
+          aria-label="Размер диалога"
+          aria-orientation="vertical"
+          aria-valuemin="35"
+          aria-valuemax="65"
+          aria-valuenow="50"
+          tabindex="0"
+          hidden
+        ></div>
         <section
           id="view-chat"
           class="view chat-view"
           data-view="chat"
           aria-label="Диалог"
         >
+          <div class="workspace-pane-title">
+            <span>Диалог</span
+            ><label class="workspace-context-label"
+              ><span class="sr-only">Рядом с диалогом</span
+              ><select id="workspace-context">
+                <option value="graph">Карта знаний</option>
+                <option value="archive">Архив</option>
+              </select></label
+            >
+          </div>
           <div id="chat-workspace"></div>
         </section>
         <section
@@ -119,6 +169,7 @@
           aria-label="Память"
           hidden
         >
+          <div class="workspace-pane-title">Архив</div>
           <div class="view-toolbar">
             <div class="tabs" role="tablist" aria-label="Разделы памяти">
               <a
@@ -264,6 +315,7 @@
           aria-label="Карта знаний"
           hidden
         >
+          <div class="workspace-pane-title">Карта знаний</div>
           <form id="graph-search-form" class="view-toolbar graph-toolbar">
             <label class="search-field"
               ><svg aria-hidden="true" class="icon">
@@ -359,7 +411,18 @@
               class="graph-inspector scroll-area"
               aria-label="Сведения об узле"
             >
-              <span class="eyebrow">В ФОКУСЕ</span>
+              <button
+                id="graph-inspector-close"
+                class="icon-button inspector-close"
+                type="button"
+                aria-label="Снять выделение"
+                title="Снять выделение"
+                hidden
+              >
+                <svg class="icon" aria-hidden="true">
+                  <use href="/icons.svg#close"></use>
+                </svg></button
+              ><span class="eyebrow">В ФОКУСЕ</span>
               <h2 id="golem-selected">Выберите узел</h2>
               <p class="muted inspector-hint">
                 Нажмите на точку, чтобы увидеть её связи и источники.
@@ -559,6 +622,91 @@
                 </p>
               </div>
               <div class="settings-side">
+                <details
+                  id="workspace-settings"
+                  class="settings-card preference-disclosure"
+                >
+                  <summary>
+                    <span class="surface-icon"
+                      ><svg class="icon" aria-hidden="true">
+                        <use href="/icons.svg#panels"></use></svg></span
+                    ><span
+                      ><strong>Чат рядом</strong
+                      ><small>Карта или архив в соседней панели</small></span
+                    >
+                  </summary>
+                  <div class="preference-fields">
+                    <label class="setting-row" for="workspace-enabled"
+                      ><span
+                        ><strong>Разделять экран</strong
+                        ><small>Один диалог в общем рабочем месте</small></span
+                      ><input
+                        id="workspace-enabled"
+                        type="checkbox"
+                        role="switch" /></label
+                    ><label class="setting-row" for="workspace-target"
+                      ><span><strong>Рядом с диалогом</strong></span
+                      ><select id="workspace-target">
+                        <option value="graph">Карта знаний</option>
+                        <option value="archive">Архив</option>
+                      </select></label
+                    ><label class="setting-row" for="workspace-chat-side"
+                      ><span><strong>Сторона диалога</strong></span
+                      ><select id="workspace-chat-side">
+                        <option value="left">Слева / сверху</option>
+                        <option value="right">Справа / снизу</option>
+                      </select></label
+                    ><label class="range-field" for="workspace-share"
+                      ><span
+                        >Доля диалога
+                        <output id="workspace-share-value">50%</output></span
+                      ><input
+                        id="workspace-share"
+                        type="range"
+                        min="35"
+                        max="65"
+                        step="1"
+                        value="50"
+                    /></label>
+                    <p class="field-hint">
+                      Разделитель можно перетаскивать мышью или менять стрелками
+                      с клавиатуры. На узком экране панели располагаются друг
+                      под другом.
+                    </p>
+                  </div>
+                </details>
+                <details
+                  id="menu-settings"
+                  class="settings-card preference-disclosure"
+                >
+                  <summary>
+                    <span class="surface-icon"
+                      ><svg class="icon" aria-hidden="true">
+                        <use href="/icons.svg#pin"></use></svg></span
+                    ><span
+                      ><strong>Левое меню</strong
+                      ><small>Ваш порядок и закреплённые разделы</small></span
+                    >
+                  </summary>
+                  <div class="preference-fields">
+                    <p class="field-hint">
+                      Закреплённые разделы видны в панели. Остальные находятся в
+                      «Ещё». Для изменения порядка используйте стрелки или
+                      перетаскивание.
+                    </p>
+                    <ol
+                      id="menu-editor"
+                      class="menu-editor"
+                      aria-label="Порядок и закрепление разделов"
+                    ></ol>
+                    <button id="reset-menu" type="button" class="text-button">
+                      Восстановить меню
+                    </button>
+                    <p class="field-hint">
+                      Настройки всегда остаются внизу панели.
+                    </p>
+                  </div>
+                </details>
                 <article class="settings-card avatar-preview-card">
                   <span class="avatar-preview"
                     ><svg aria-hidden="true">
@@ -650,8 +798,19 @@
         </section>
       </main>
     </div>
+    <nav
+      id="nav-overflow"
+      class="nav-overflow"
+      aria-label="Дополнительные разделы"
+      hidden
+    >
+      <span class="eyebrow">ЕЩЁ</span>
+      <div id="nav-overflow-links"></div>
+    </nav>
     <div id="toast" class="toast" role="status" hidden></div>
     <script src="/ui.js" defer></script>
+    <script src="/workspace-prefs.js" defer></script>
+    <script src="/workspace.js" defer></script>
     <script src="/app.js" defer></script>
     <script src="/chat-avatar.js" defer></script>
     <script src="/knowledge-map.js" defer></script>
