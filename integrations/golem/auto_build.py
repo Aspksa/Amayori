@@ -30,7 +30,7 @@ def main():
                 return
         except (ValueError, OSError):
             pass
-    needed = ("numpy", "sentence_transformers", "sklearn", "umap")
+    needed = ("numpy", "sentence_transformers", "sklearn", "umap") + (("psycopg",) if os.environ.get("AMAYORI_DATABASE_URL") else ())
     if any(importlib.util.find_spec(name) is None for name in needed):
         print("Installing optional Golem dependencies...", flush=True)
         subprocess.run([sys.executable, "-m", "pip", "install", "-r", str(ROOT / "integrations/golem/requirements.txt")], check=True, timeout=900)
@@ -68,6 +68,12 @@ def main():
             raise
     finally:
         shutil.rmtree(stage, ignore_errors=True)
+    if os.environ.get('AMAYORI_DATABASE_URL'):
+        try:
+            from sync_pgvector import sync
+            sync()
+        except Exception as exc:
+            print('Optional pgvector indexing failed:', exc, file=sys.stderr)
 
 if __name__ == "__main__":
     try:
