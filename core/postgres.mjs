@@ -23,9 +23,9 @@ export async function initDatabase(){
  return {enabled:true};
 }
 export async function insertMemory(role,content,embedding=null){
- const db=await database();if(!db)return;
  if(!['user','assistant'].includes(role)||typeof content!=='string')throw Error('Invalid memory');
  if(embedding!==null&&(!Array.isArray(embedding)||embedding.length!==384||!embedding.every(Number.isFinite)))throw Error('Embedding must contain 384 finite numbers');
+ const db=await database();if(!db)return;
  await db.query('INSERT INTO amayori_memories(role,content,embedding) VALUES($1,$2,$3::vector)',[role,content,embedding===null?null:'['+embedding.join(',')+']']);
 }
 export async function searchMemory(embedding,limit=5){
