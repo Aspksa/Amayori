@@ -90,6 +90,42 @@ const api = {
   "/api/golem/live": { traces: [{ id: 90, fact_ids: ["38", "41"] }] },
 };
 
+// The Golem is built for a large memory: eight nodes show neither clusters nor
+// sizing, so its page gets a denser generated graph than the readable demo above.
+const themes = [
+  ["Память", ["архив", "PostgreSQL", "pgvector", "эмбеддинги", "индексация", "миграция", "снимок", "вектор 384"]],
+  ["Голем", ["карта", "кластеры", "узлы", "связи", "Three.js", "резервная карта", "след ответа", "легенда"]],
+  ["Cloud.ru", ["модель", "ключ", "лимиты", "эндпоинт", "ответ", "проверка связи", "список моделей"]],
+  ["Интерфейс", ["диалог", "аватар", "разделы", "настройки", "плотность", "анимации", "поиск"]],
+  ["Запуск", ["Amayori.bat", "Node.js", "зависимости", "логи", "порт", "браузер"]],
+  ["Знания", ["факты", "субъект", "предикат", "объект", "версии", "конфликты", "источники"]],
+  ["Проверки", ["тесты", "CI", "Windows", "Chromium", "синтаксис"]],
+];
+const denseNodes = [], denseEdges = [];
+let edgeId = 1000;
+themes.forEach(([hub, leaves], theme) => {
+  denseNodes.push({id: hub, label: hub});
+  leaves.forEach((leaf, index) => {
+    const name = leaf + " · " + hub;
+    denseNodes.push({id: name, label: leaf});
+    denseEdges.push({
+      id: String(edgeId++), source: hub, target: name, label: "включает",
+      sourceType: index % 3 === 0 ? "user-confirmed" : "cloudru-extracted",
+    });
+    if (index > 1)
+      denseEdges.push({
+        id: String(edgeId++), source: name, target: leaves[index - 2] + " · " + hub,
+        label: "связано", sourceType: "cloudru-extracted",
+      });
+  });
+  if (theme > 0)
+    denseEdges.push({
+      id: String(edgeId++), source: hub, target: themes[theme - 1][0],
+      label: "граничит", sourceType: "user-confirmed",
+    });
+});
+const denseTrace = denseEdges.slice(4, 16).map((edge) => edge.id);
+
 try {
   for (const name of ["public", "core", "server.mjs", "package.json"])
     await fs.cp(path.join(root, name), path.join(temp, name), { recursive: true });
@@ -150,7 +186,17 @@ try {
   }
 
   const golem = await context.newPage();
-  await golem.route("**/api/**", mock);
+  golem.on("pageerror", (error) => errors.push(error.message));
+  await golem.route("**/api/**", async (route) => {
+    const pathname = new URL(route.request().url()).pathname;
+    if (pathname === "/api/golem/knowledge")
+      return route.fulfill({
+        json: {nodes: denseNodes, edges: denseEdges, total: denseNodes.length, offset: 0, limit: 300, source: "postgresql"},
+      });
+    if (pathname === "/api/golem/live")
+      return route.fulfill({json: {traces: [{id: 777, fact_ids: denseTrace}]}});
+    return mock(route);
+  });
   await golem.goto(base + "/golem");
   await delay(6000);
   await golem.screenshot({ path: path.join(out, "9-golem.png") });
