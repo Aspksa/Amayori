@@ -68,6 +68,12 @@ def main():
             raise
     finally:
         shutil.rmtree(stage, ignore_errors=True)
+    if os.environ.get('AMAYORI_DATABASE_URL'):
+        try:
+            from sync_pgvector import sync
+            sync()
+        except Exception as exc:
+            print('Optional pgvector indexing failed:', exc, file=sys.stderr)
 
 if __name__ == "__main__":
     try:
