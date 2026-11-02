@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0.0",
   "project": "Aspksa/Amayori",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "updated_at": "2026-11-02",
   "language": "ru",
   "objective": "Единый развивающийся ИИ-мозг: Cloud.ru сейчас, проверяемое дообучение позже",
@@ -21,7 +21,7 @@
     "knowledge": "amayori_facts: версионируемые триплеты со статусами active/superseded/rejected (PR #28)",
     "knowledge_visualization": "Отдельная страница /golem: Three.js поверх Canvas-резерва, данные из PostgreSQL-фактов или data/graph.json",
     "vector_search": "pgvector(384) на эмбеддингах Cloud.ru при AMAYORI_EMBEDDING_MODEL (PR #21, #31); отдельно локальные Python-эмбеддинги и UMAP/PCA для 3D-проекции",
-    "external_bridges": "MemOS и Graphiti: только опциональные локальные HTTP-адаптеры, сами движки не входят в проект",
+    "external_bridges": "Graphiti: только опциональный локальный HTTP-адаптер, сам движок не входит в проект. MemOS удалён из проекта",
     "training": "не реализовано; есть только экспорт вручную проверенных примеров (PR #25)"
   },
   "delivered": [

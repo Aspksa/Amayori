@@ -1,26 +1,22 @@
 import {recall} from './store.mjs';
 import {findFacts, searchMemory} from './postgres.mjs';
 import {cloudEmbedding} from './cloud-embedding.mjs';
-import {memosSearch} from './bridges.mjs';
 
 export async function collectChatMemory({text, config, databaseEnabled, embeddingModel}, dependencies = {}) {
   const lexicalRecall = dependencies.recall || recall;
   const factsSearch = dependencies.findFacts || findFacts;
   const vectorSearch = dependencies.searchMemory || searchMemory;
   const embed = dependencies.cloudEmbedding || cloudEmbedding;
-  const bridgeRecall = dependencies.memosSearch || memosSearch;
   const warnings = [];
   const optional = async (name, fn, fallback) => {
     try { return await fn(); } catch { warnings.push(name); return fallback; }
   };
   const terms = [...new Set(text.toLocaleLowerCase('ru').match(/[\p{L}\p{N}]{4,}/gu) || [])].slice(0, 6);
-  const [lexical, semantic, batches, bridge] = await Promise.all([
+  const [lexical, semantic, batches] = await Promise.all([
     lexicalRecall(text),
     databaseEnabled && embeddingModel
       ? optional('pgvector', async () => vectorSearch(await embed(config, text, embeddingModel), 6), []) : [],
     Promise.all(terms.map(term => optional('facts', () => factsSearch(term, 12), []))),
-    // An unconfigured bridge answers {enabled:false} without any network call.
-    optional('memos-bridge', () => bridgeRecall(text), {enabled: false}),
   ]);
   const unique = new Map();
   for (const batch of batches) for (const fact of batch) unique.set(String(fact.id), fact);
@@ -37,11 +33,9 @@ export async function collectChatMemory({text, config, databaseEnabled, embeddin
     .filter(row => typeof row.content === 'string' && row.distance !== null
       && Number.isFinite(Number(row.distance)) && Number(row.distance) <= .5)
     .map(row => row.content).slice(0, 4);
-  const bridgeTexts = (bridge?.enabled && Array.isArray(bridge.data?.memories) ? bridge.data.memories : [])
-    .filter(value => typeof value === 'string' && value.trim()).slice(0, 4);
-  const seen = new Set(), lines = [], sources = {lexical: 0, semantic: 0, bridge: 0};
+  const seen = new Set(), lines = [], sources = {lexical: 0, semantic: 0};
   let length = 0;
-  for (const [source, values] of [['semantic', semanticTexts], ['bridge', bridgeTexts], ['lexical', lexical]]) {
+  for (const [source, values] of [['semantic', semanticTexts], ['lexical', lexical]]) {
     for (const value of values) {
       const excerpt = String(value).trim().slice(0, 500), key = excerpt.toLocaleLowerCase('ru');
       if (!excerpt || seen.has(key) || length + excerpt.length + 1 > 3000) continue;

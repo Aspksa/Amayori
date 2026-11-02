@@ -35,7 +35,6 @@ try {
       PORT: String(port),
       AMAYORI_GOLEM_AUTO_BUILD: "0",
       AMAYORI_DATABASE_URL: "",
-      AMAYORI_MEMOS_BRIDGE_URL: "",
       AMAYORI_GRAPHITI_BRIDGE_URL: "",
       AMAYORI_EMBEDDING_MODEL: "",
     },
