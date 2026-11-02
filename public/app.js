@@ -5,3 +5,5 @@ $('#settings-form').addEventListener('submit',async e=>{e.preventDefault();try{a
 $('#test-connection').addEventListener('click',async()=>{try{$('#app-status').textContent='Проверка соединения…';await api('/api/test-connection',{method:'POST',body:'{}'});$('#app-status').textContent='Соединение с моделью работает'}catch(e){$('#app-status').textContent=e.message}});
 api('/api/settings').then(s=>{$('#model').value=s.model||'';$('#endpoint').value=s.endpoint||'';$('#key-state').textContent=s.hasKey?'Ключ сохранён на компьютере':'Ключ не задан'}).catch(e=>$('#app-status').textContent=e.message);
 refresh();document.addEventListener('amayori-chat-updated',refresh);
+
+api('/api/integrations/status').then(s=>{document.querySelector('#memory-engine').textContent='MemOS: '+(s.memos.configured?'мост настроен, работоспособность не проверена':'не подключён');document.querySelector('#graph-engine').textContent='Graphiti: '+(s.graphiti.configured?'мост настроен, работоспособность не проверена':'не подключён')}).catch(e=>document.querySelector('#app-status').textContent=e.message);
