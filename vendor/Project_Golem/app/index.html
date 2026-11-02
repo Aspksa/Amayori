@@ -92,19 +92,21 @@
         
         const controls = new OrbitControls(camera, renderer.domElement);
         controls.enableDamping = true; controls.autoRotate = true; controls.autoRotateSpeed = 0.5;
+        fetch('/api/golem/settings').then(r=>r.ok?r.json():null).then(cfg=>{if(cfg){controls.autoRotate=cfg.autoRotate;material.uniforms.uNodeScale.value=cfg.nodeSize/2;}}).catch(()=>{});
 
         let pointsMesh, geometry;
         let nodes = [];
 
         // --- SHADER ---
         const material = new THREE.ShaderMaterial({
-            uniforms: { uTime: { value: 0 } },
+            uniforms: { uTime: { value: 0 }, uNodeScale: { value: 1 } },
             vertexShader: `
                 attribute vec3 color;
                 attribute float activationTime;
                 varying vec3 vColor;
                 varying float vAlpha;
                 uniform float uTime;
+                uniform float uNodeScale;
                 void main() {
                     vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
                     float timeSinceHit = uTime - activationTime;
@@ -112,7 +114,7 @@
                     
                     if (timeSinceHit > 0.0 && timeSinceHit < 3.0) {
                         intensity = 1.0 / (1.0 + timeSinceHit * 3.0); 
-                        gl_PointSize = (4.0 * (1.0 + intensity * 5.0)) * (300.0 / -mvPosition.z);
+                        gl_PointSize = uNodeScale * (4.0 * (1.0 + intensity * 5.0)) * (300.0 / -mvPosition.z);
                     } else {
                         gl_PointSize = 2.5 * (300.0 / -mvPosition.z);
                     }
@@ -211,16 +213,17 @@
                 
                 if(result.indices.length > 0) {
                     const topNode = nodes[result.indices[0]];
-                    log.innerHTML = `> Top Match: <span style="color:#fff">${topNode.title}</span><br>[${topNode.cat}]`;
+                    log.textContent = `Top Match: ${topNode.title} [${topNode.cat}]`;
                 }
             }
         });
 
         function triggerMultiPulse(indices) {
             const currentTime = performance.now() / 1000;
+            if (!geometry?.attributes?.activationTime) return;
             const activations = geometry.attributes.activationTime.array;
             indices.forEach((idx, i) => {
-                activations[idx] = currentTime + (i * 0.02);
+                if(Number.isInteger(idx) && idx >= 0 && idx < activations.length) activations[idx] = currentTime + (i * 0.02);
             });
             geometry.attributes.activationTime.needsUpdate = true;
         }
