@@ -34,3 +34,7 @@ jobs:
       - run: node --check public/golem-six.js
       - run: node --check core/postgres.mjs
       - run: node --check core/golem-auto.mjs
+
+      - run: node --check public/golem-immersive.js
+      - run: node --check public/golem-fallback.js
+      - run: node --check public/knowledge-map.js
