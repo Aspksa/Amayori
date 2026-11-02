@@ -1,5 +1,5 @@
 import * as THREE from '/three.module.js';
-import {normalizeGolemSettings} from '/golem-state.js';
+import {normalizeGolemSettings, constellationName, inventConstellationName} from '/golem-state.js';
 
 const canvas = document.getElementById('brain');
 const detail = document.getElementById('detail');
@@ -14,8 +14,8 @@ try {
   notice.textContent = '3D недоступен: ' + error.message;
   throw error;
 }
-const BACKGROUND = 0x0c0d10;
-renderer.setClearColor(BACKGROUND, 1);
+const SPACE = 0x05060a;
+renderer.setClearColor(SPACE, 1);
 
 let preferences = normalizeGolemSettings();
 try {
@@ -23,149 +23,472 @@ try {
   if (response.ok) preferences = normalizeGolemSettings(await response.json());
 } catch (error) { console.warn('Golem settings:', error.message); }
 
-const MAX_NODES = 1200, MAX_EDGES = 1500, MAX_PULSES = 40, DUST = 900;
-// Warm tones only: the Golem keeps the obsidian-and-gold palette of the app.
-const CLUSTER_COLORS = [0xf2cd87, 0xf4e6c4, 0xc8873f, 0xcdb87e, 0x9d8f5e, 0x8c8794];
-const TRACE_COLOR = 0xffd47c;
-const EDGE_CONFIRMED = 0xc9a86a;
-const EDGE_EXTRACTED = 0x7e7358;
+const MAX_STARS = 1200, MAX_PLANETS = 1500, MAX_LINKS = 700, MAX_SIGNALS = 40, GAS = 5200;
+const STAR_TONES = [0xfff4dc, 0xf2cd87, 0xe8b96a, 0xd7c49a, 0xc89a55, 0xbfae84];
+const FLARE = 0xfff0c4;
+const DIM = 0x6b4a33;
 const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 const scene = new THREE.Scene();
-scene.fog = new THREE.Fog(BACKGROUND, 200, 760);
-const camera = new THREE.PerspectiveCamera(48, 1, .1, 3000);
-const brain = new THREE.Group();
-scene.add(brain);
+const camera = new THREE.PerspectiveCamera(46, 1, 0.1, 9000);
+const galaxy = new THREE.Group();
+scene.add(galaxy);
+scene.add(new THREE.AmbientLight(0x4e4636, 1.25));
+const coreLight = new THREE.PointLight(0xffdca8, 2.1, 0, 0);
+scene.add(coreLight);
 
-// Without lights every node was a flat disc and the sphere read as a 2D ring.
-scene.add(new THREE.AmbientLight(0x5c5341, 1.5));
-const keyLight = new THREE.PointLight(0xffdfae, 1.75, 0, 0);
-keyLight.position.set(260, 210, 330);
-scene.add(keyLight);
-const rimLight = new THREE.PointLight(0x8fb0da, 0.62, 0, 0);
-rimLight.position.set(-300, -170, -260);
-scene.add(rimLight);
-
-// One instanced mesh and one line batch replace ~2700 separate scene objects.
-const nodeMesh = new THREE.InstancedMesh(
-  new THREE.SphereGeometry(1, 12, 10),
-  new THREE.MeshPhongMaterial({shininess: 34, specular: 0x4b4030}),
-  MAX_NODES,
-);
-nodeMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-nodeMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(MAX_NODES * 3), 3);
-nodeMesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
-nodeMesh.frustumCulled = false;
-nodeMesh.count = 0;
-brain.add(nodeMesh);
-
-const edgeGeometry = new THREE.BufferGeometry();
-const edgePositions = new Float32Array(MAX_EDGES * 6);
-const edgeColors = new Float32Array(MAX_EDGES * 6);
-edgeGeometry.setAttribute('position', new THREE.BufferAttribute(edgePositions, 3).setUsage(THREE.DynamicDrawUsage));
-edgeGeometry.setAttribute('color', new THREE.BufferAttribute(edgeColors, 3).setUsage(THREE.DynamicDrawUsage));
-const edgeMesh = new THREE.LineSegments(edgeGeometry, new THREE.LineBasicMaterial({
-  vertexColors: true, transparent: true, opacity: 0.62, depthWrite: false,
-}));
-edgeMesh.frustumCulled = false;
-brain.add(edgeMesh);
-
-// A soft additive halo per node. Real bloom needs post-processing passes that
-// would have to be served from three/examples; this costs one draw call.
-function haloTexture() {
-  const size = 64, surface = document.createElement('canvas');
+function sprite(stops) {
+  const size = 128, surface = document.createElement('canvas');
   surface.width = surface.height = size;
   const paint = surface.getContext('2d');
   const gradient = paint.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
-  gradient.addColorStop(0, 'rgba(255,245,215,.95)');
-  gradient.addColorStop(0.35, 'rgba(255,225,165,.34)');
-  gradient.addColorStop(1, 'rgba(255,215,150,0)');
+  for (const [at, tone] of stops) gradient.addColorStop(at, tone);
   paint.fillStyle = gradient;
   paint.fillRect(0, 0, size, size);
   const texture = new THREE.CanvasTexture(surface);
   texture.colorSpace = THREE.SRGBColorSpace;
   return texture;
 }
-const halo = haloTexture();
-const glowGeometry = new THREE.BufferGeometry();
-const glowPositions = new Float32Array(MAX_NODES * 3);
-const glowColors = new Float32Array(MAX_NODES * 3);
-glowGeometry.setAttribute('position', new THREE.BufferAttribute(glowPositions, 3).setUsage(THREE.DynamicDrawUsage));
-glowGeometry.setAttribute('color', new THREE.BufferAttribute(glowColors, 3).setUsage(THREE.DynamicDrawUsage));
-const glowMaterial = new THREE.PointsMaterial({
-  map: halo, vertexColors: true, transparent: true, opacity: 0.34, size: 14,
-  sizeAttenuation: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
+const glare = sprite([[0, 'rgba(255,255,255,1)'], [0.16, 'rgba(255,241,208,.8)'], [0.5, 'rgba(255,206,136,.18)'], [1, 'rgba(255,190,110,0)']]);
+const haze = sprite([[0, 'rgba(255,214,150,.16)'], [0.55, 'rgba(188,150,112,.05)'], [1, 'rgba(120,110,120,0)']]);
+
+const pointShader = () => new THREE.ShaderMaterial({
+  uniforms: {map: {value: glare}, uScale: {value: 1}},
+  vertexShader: 'attribute float size; attribute vec3 tone; varying vec3 vTone; uniform float uScale;' +
+    'void main(){ vTone = tone; vec4 mv = modelViewMatrix * vec4(position,1.0);' +
+    'gl_PointSize = size * uScale * (330.0 / -mv.z); gl_Position = projectionMatrix * mv; }',
+  fragmentShader: 'uniform sampler2D map; varying vec3 vTone;' +
+    'void main(){ vec4 t = texture2D(map, gl_PointCoord); gl_FragColor = vec4(vTone,1.0) * t; }',
+  transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false,
 });
-const glowMesh = new THREE.Points(glowGeometry, glowMaterial);
-glowMesh.frustumCulled = false;
-brain.add(glowMesh);
 
-// Far dust gives the void a parallax and keeps the brain from floating in nothing.
-const dustGeometry = new THREE.BufferGeometry();
-const dustPositions = new Float32Array(DUST * 3);
-for (let i = 0; i < DUST; i++) {
-  const angle = i * 2.399963229728653, z = 1 - 2 * (i + 0.5) / DUST;
-  const ring = Math.sqrt(Math.max(0, 1 - z * z));
-  const radius = 430 + ((Math.sin(i * 7.17) + 1) / 2) * 320;
-  dustPositions[i * 3] = Math.cos(angle) * ring * radius;
-  dustPositions[i * 3 + 1] = Math.sin(angle) * ring * radius;
-  dustPositions[i * 3 + 2] = z * radius;
-}
-dustGeometry.setAttribute('position', new THREE.BufferAttribute(dustPositions, 3));
-const dust = new THREE.Points(dustGeometry, new THREE.PointsMaterial({
-  map: halo, color: 0xb9a680, transparent: true, opacity: 0.22, size: 7,
-  sizeAttenuation: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
-}));
-dust.frustumCulled = false;
-scene.add(dust);
-
-// Travelling dots: bright for the last answer, faint for the resting state.
-const pulseMesh = new THREE.InstancedMesh(
+// Stars are solid so they can be picked and shaded; the glow layer is the flare.
+const starMesh = new THREE.InstancedMesh(
   new THREE.SphereGeometry(1, 8, 6),
-  new THREE.MeshBasicMaterial({
-    color: 0xffffff, transparent: true, opacity: 0.95,
-    blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
-  }),
-  MAX_PULSES,
+  new THREE.MeshBasicMaterial({}),
+  MAX_STARS,
 );
-pulseMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(MAX_PULSES * 3), 3);
-pulseMesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
-pulseMesh.frustumCulled = false;
-pulseMesh.count = 0;
-brain.add(pulseMesh);
+starMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(MAX_STARS * 3), 3);
+starMesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
+starMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+starMesh.frustumCulled = false;
+starMesh.count = 0;
+galaxy.add(starMesh);
 
-const positions = new Float32Array(MAX_NODES * 3);
-const velocities = new Float32Array(MAX_NODES * 3);
-const radii = new Float32Array(MAX_NODES);
-const clusterOf = new Int32Array(MAX_NODES);
-const degree = new Int32Array(MAX_NODES);
-let items = [], edges = [], adjacency = [], clusters = [], maxDegree = 1;
+const glowGeometry = new THREE.BufferGeometry();
+const glowPos = new Float32Array(MAX_STARS * 3);
+const glowSize = new Float32Array(MAX_STARS);
+const glowTone = new Float32Array(MAX_STARS * 3);
+glowGeometry.setAttribute('position', new THREE.BufferAttribute(glowPos, 3).setUsage(THREE.DynamicDrawUsage));
+glowGeometry.setAttribute('size', new THREE.BufferAttribute(glowSize, 1).setUsage(THREE.DynamicDrawUsage));
+glowGeometry.setAttribute('tone', new THREE.BufferAttribute(glowTone, 3).setUsage(THREE.DynamicDrawUsage));
+const glowMaterial = pointShader();
+const glowPoints = new THREE.Points(glowGeometry, glowMaterial);
+glowPoints.frustumCulled = false;
+galaxy.add(glowPoints);
+
+// Planets: every fact orbits the entity it describes.
+const planetMesh = new THREE.InstancedMesh(
+  new THREE.SphereGeometry(1, 6, 5),
+  new THREE.MeshPhongMaterial({shininess: 18, specular: 0x3a3226}),
+  MAX_PLANETS,
+);
+planetMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(MAX_PLANETS * 3), 3);
+planetMesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
+planetMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+planetMesh.frustumCulled = false;
+planetMesh.count = 0;
+galaxy.add(planetMesh);
+
+// Constellation figures: drawn only inside one region, never across the sky.
+const linkGeometry = new THREE.BufferGeometry();
+const linkPos = new Float32Array(MAX_LINKS * 6);
+const linkTone = new Float32Array(MAX_LINKS * 6);
+linkGeometry.setAttribute('position', new THREE.BufferAttribute(linkPos, 3).setUsage(THREE.DynamicDrawUsage));
+linkGeometry.setAttribute('color', new THREE.BufferAttribute(linkTone, 3).setUsage(THREE.DynamicDrawUsage));
+const linkLines = new THREE.LineSegments(linkGeometry, new THREE.LineBasicMaterial({
+  vertexColors: true, transparent: true, opacity: 0.5, depthWrite: false,
+}));
+linkLines.frustumCulled = false;
+galaxy.add(linkLines);
+
+// The archive that has not condensed into knowledge yet.
+const gasGeometry = new THREE.BufferGeometry();
+const gasPos = new Float32Array(GAS * 3);
+const gasSize = new Float32Array(GAS);
+const gasTone = new Float32Array(GAS * 3);
+gasGeometry.setAttribute('position', new THREE.BufferAttribute(gasPos, 3));
+gasGeometry.setAttribute('size', new THREE.BufferAttribute(gasSize, 1));
+gasGeometry.setAttribute('tone', new THREE.BufferAttribute(gasTone, 3));
+const gasPoints = new THREE.Points(gasGeometry, pointShader());
+gasPoints.frustumCulled = false;
+galaxy.add(gasPoints);
+
+const nebulaMaterial = new THREE.SpriteMaterial({map: haze, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false});
+const nebulae = [];
+for (let i = 0; i < 14; i++) {
+  const cloud = new THREE.Sprite(nebulaMaterial.clone());
+  cloud.visible = false;
+  galaxy.add(cloud);
+  nebulae.push(cloud);
+}
+const bulge = new THREE.Sprite(nebulaMaterial.clone());
+galaxy.add(bulge);
+
+const signalMesh = new THREE.InstancedMesh(
+  new THREE.SphereGeometry(1, 6, 5),
+  new THREE.MeshBasicMaterial({color: 0xffffff, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false}),
+  MAX_SIGNALS,
+);
+signalMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(MAX_SIGNALS * 3), 3);
+signalMesh.frustumCulled = false;
+signalMesh.count = 0;
+galaxy.add(signalMesh);
+
+const starPos = new Float32Array(MAX_STARS * 3);
+const starRadius = new Float32Array(MAX_STARS);
+const starUses = new Float32Array(MAX_STARS);
+const regionOf = new Int32Array(MAX_STARS);
+const degree = new Int32Array(MAX_STARS);
+const planetOf = new Int32Array(MAX_PLANETS);
+const planetOrbit = new Float32Array(MAX_PLANETS);
+const planetPhase = new Float32Array(MAX_PLANETS);
+const planetTilt = new Float32Array(MAX_PLANETS);
+const planetSize = new Float32Array(MAX_PLANETS);
+const planetDead = new Uint8Array(MAX_PLANETS);
+
+let stars = [], planets = [], adjacency = [], regions = [], links = [];
 let indexById = new Map();
-let placeholderMode = false, layoutLeft = 0;
-let pulses = [];
-let activeFactIds = new Set(), highlightedNodes = new Set();
+let empty = true, spread = 220;
+let activeFactIds = new Set(), flaring = new Set();
 let selected = null, loading = false, lastFingerprint = '', contextLost = false;
 let frameAverage = 16.7, lastHeartbeat = -Infinity, previousTraceId = null;
-let activity = 0, lastSpark = 0;
+let activity = 0, lastSignal = 0, signals = [];
 
 const matrix = new THREE.Matrix4();
-const colorScratch = new THREE.Color();
+const tint = new THREE.Color();
+const vector = new THREE.Vector3();
 const raycaster = new THREE.Raycaster();
-const mouse = new THREE.Vector2();
+const pointer = new THREE.Vector2();
 
-// The camera orbits a target instead of sitting on a fixed axis, so it can fly to a node.
-const orbit = {theta: 0.7, phi: 1.2, dist: 440, target: new THREE.Vector3()};
-const want = {theta: 0.7, phi: 1.2, dist: 440, target: new THREE.Vector3()};
+const orbit = {theta: 0.6, phi: 1.05, dist: 700, target: new THREE.Vector3()};
+const want = {theta: 0.6, phi: 1.05, dist: 700, target: new THREE.Vector3()};
 let spin = 0, drag = null, userFramed = false;
 
-const noise = (i, salt) => {
-  const value = Math.sin((i + 1) * 12.9898 + salt * 78.233) * 43758.5453;
-  return value - Math.floor(value);
+const hash = (text, salt = 0) => {
+  let value = 2166136261 ^ salt;
+  for (let i = 0; i < text.length; i++) { value ^= text.charCodeAt(i); value = Math.imul(value, 16777619); }
+  return (value >>> 0) / 4294967296;
 };
 const shorten = (value) => {
   const text = String(value);
   return text.length > 24 ? text.slice(0, 23).trimEnd() + '…' : text;
 };
+
+// Regions grow outward from the busiest entities; each becomes a constellation.
+function buildRegions(count) {
+  const wanted = Math.max(1, Math.min(6, Math.round(Math.sqrt(count / 6))));
+  const order = Array.from({length: count}, (_, i) => i).sort((a, b) => degree[b] - degree[a] || a - b);
+  const seeds = [], blocked = new Set();
+  for (const candidate of order) {
+    if (seeds.length >= wanted) break;
+    if (blocked.has(candidate) || !degree[candidate]) continue;
+    seeds.push(candidate);
+    blocked.add(candidate);
+    for (const near of adjacency[candidate] || []) blocked.add(near);
+  }
+  if (!seeds.length && count) seeds.push(order[0]);
+  const owner = new Int32Array(count).fill(-1);
+  let frontier = [];
+  seeds.forEach((seed, index) => { owner[seed] = index; frontier.push(seed); });
+  while (frontier.length) {
+    const next = [];
+    for (const node of frontier)
+      for (const near of adjacency[node] || [])
+        if (owner[near] === -1) { owner[near] = owner[node]; next.push(near); }
+    frontier = next;
+  }
+  const loose = seeds.length;
+  let hasLoose = false;
+  for (let i = 0; i < count; i++) if (owner[i] === -1) { owner[i] = loose; hasLoose = true; }
+  const groups = new Map();
+  for (let i = 0; i < count; i++) {
+    let group = groups.get(owner[i]);
+    if (!group) groups.set(owner[i], group = []);
+    group.push(i);
+  }
+  regions = [...groups.entries()]
+    .sort((a, b) => b[1].length - a[1].length)
+    .map(([key, members], index) => {
+      let leader = members[0];
+      for (const member of members) if (degree[member] > degree[leader]) leader = member;
+      for (const member of members) regionOf[member] = index;
+      return {
+        members, leader,
+        size: members.length,
+        tone: STAR_TONES[index % STAR_TONES.length],
+        name: hasLoose && key === loose
+          ? inventConstellationName(members.map((i) => String(stars[i]?.label || '')), 991)
+          : constellationName(stars[leader]?.label, members.map((i) => String(stars[i]?.label || '')), index * 37 + 5),
+      };
+    });
+}
+
+function stage(count) {
+  if (!count) return 'Протооблако';
+  if (count < 60) return 'Протооблако';
+  if (count < 400) return 'Ядро и первые рукава';
+  return 'Спиральная память';
+}
+
+// Age becomes distance from the core, so the shape is the history of the memory:
+// the oldest knowledge sits in the bulge, the newest is born at the arm tips.
+function placeStars(count) {
+  const structure = Math.min(1, Math.pow(count / 700, 0.75));
+  const arms = count > 500 ? 2 : 1;
+  spread = 90 + 190 * Math.min(1, Math.pow(count / 1400, 0.45));
+  for (let i = 0; i < count; i++) {
+    const star = stars[i];
+    const age = count === 1 ? 0 : star.rank / (count - 1);
+    const jitterA = hash(star.id, 1), jitterB = hash(star.id, 2), jitterC = hash(star.id, 3);
+    const inBulge = age < 0.18 * structure;
+    const spiralR = inBulge ? spread * 0.12 * Math.pow(jitterA, 0.45) : 18 + spread * Math.pow(age, 0.62);
+    const looseR = spread * (0.2 + 0.8 * Math.pow(jitterA, 0.5));
+    const radius = spiralR * structure + looseR * (1 - structure);
+    const arm = star.rank % arms;
+    const wobble = (jitterB - 0.5) * (0.5 + 1.7 * (1 - structure));
+    const theta = arm * (Math.PI * 2 / arms) + radius * 0.02 + wobble + (1 - structure) * jitterC * 6.283;
+    const flat = inBulge ? spread * 0.06 : 22 * Math.exp(-radius / 95) + 4;
+    starPos[i * 3] = Math.cos(theta) * radius + (jitterC - 0.5) * 12;
+    starPos[i * 3 + 1] = (jitterB - 0.5) * 2 * flat;
+    starPos[i * 3 + 2] = Math.sin(theta) * radius + (jitterA - 0.5) * 12;
+    const heat = Math.min(1, starUses[i] / 10);
+    starRadius[i] = (1.5 + Math.sqrt(degree[i]) * 0.9 + heat * 2.2) * (preferences.nodeSize / 2);
+  }
+}
+
+function placeGas(count) {
+  const structure = Math.min(1, Math.pow(Math.max(count, 1) / 700, 0.75));
+  for (let i = 0; i < GAS; i++) {
+    const inDisc = i % 4 !== 0;
+    const a = hash('gas' + i, 4), b = hash('gas' + i, 5), c = hash('gas' + i, 6);
+    const radius = inDisc ? spread * (0.08 + 1.2 * Math.pow(a, 0.55)) : spread * (1.5 + b * 2.4);
+    const theta = c * 6.283 + radius * 0.02 * structure;
+    const flat = inDisc ? 15 * Math.exp(-radius / 115) + 5 : radius * 0.45;
+    gasPos[i * 3] = Math.cos(theta) * radius + (b - 0.5) * 30;
+    gasPos[i * 3 + 1] = (a - 0.5) * 2 * flat;
+    gasPos[i * 3 + 2] = Math.sin(theta) * radius + (c - 0.5) * 30;
+    gasSize[i] = (2.4 + b * 3.2) * (inDisc ? 1 : 0.55);
+    const warm = inDisc ? 0.8 : 0.5;
+    gasTone[i * 3] = 0.5 * warm; gasTone[i * 3 + 1] = 0.43 * warm; gasTone[i * 3 + 2] = 0.34 * warm;
+  }
+  gasGeometry.attributes.position.needsUpdate = true;
+  gasGeometry.attributes.size.needsUpdate = true;
+  gasGeometry.attributes.tone.needsUpdate = true;
+  for (let i = 0; i < nebulae.length; i++) {
+    const cloud = nebulae[i];
+    const a = hash('neb' + i, 7), b = hash('neb' + i, 8), c = hash('neb' + i, 9);
+    const radius = spread * (0.1 + Math.pow(a, 0.7) * 1.05);
+    const theta = c * 6.283 + radius * 0.02 * structure;
+    cloud.position.set(Math.cos(theta) * radius, (b - 0.5) * 26, Math.sin(theta) * radius);
+    const scale = spread * (0.3 + b * 0.55);
+    cloud.scale.set(scale, scale, 1);
+    cloud.material.opacity = 0.08 + a * 0.12;
+    cloud.visible = true;
+  }
+  bulge.scale.setScalar(spread * (0.3 + structure * 0.25));
+  bulge.material.opacity = 0.3 + structure * 0.4;
+}
+
+// Figures connect bright stars inside one region, so a constellation never
+// sprawls across the whole sky.
+function buildFigures() {
+  links = [];
+  regions.forEach((region, index) => {
+    const bright = [...region.members].sort((a, b) => degree[b] - degree[a] || a - b).slice(0, 10);
+    if (bright.length < 2) return;
+    // Walk from star to nearest star: a figure should be a compact shape, not a
+    // bundle of chords thrown across the whole disc.
+    const left = new Set(bright);
+    let current = bright[0];
+    left.delete(current);
+    while (left.size && links.length < MAX_LINKS) {
+      let best = null, bestDistance = Infinity;
+      for (const candidate of left) {
+        const dx = starPos[current * 3] - starPos[candidate * 3];
+        const dy = starPos[current * 3 + 1] - starPos[candidate * 3 + 1];
+        const dz = starPos[current * 3 + 2] - starPos[candidate * 3 + 2];
+        const distance = dx * dx + dy * dy + dz * dz;
+        if (distance < bestDistance) { bestDistance = distance; best = candidate; }
+      }
+      if (best === null) break;
+      // A figure stays inside its own neighbourhood.
+      if (Math.sqrt(bestDistance) < spread * 0.75) links.push({a: current, b: best, region: index});
+      left.delete(best);
+      current = best;
+    }
+  });
+}
+
+function uploadStars() {
+  const count = stars.length;
+  for (let i = 0; i < count; i++) {
+    matrix.makeScale(starRadius[i], starRadius[i], starRadius[i]);
+    matrix.setPosition(starPos[i * 3], starPos[i * 3 + 1], starPos[i * 3 + 2]);
+    starMesh.setMatrixAt(i, matrix);
+    glowPos[i * 3] = starPos[i * 3];
+    glowPos[i * 3 + 1] = starPos[i * 3 + 1];
+    glowPos[i * 3 + 2] = starPos[i * 3 + 2];
+    glowSize[i] = starRadius[i] * 3.5;
+  }
+  starMesh.count = count;
+  starMesh.instanceMatrix.needsUpdate = true;
+  starMesh.computeBoundingSphere();
+  glowGeometry.setDrawRange(0, count);
+  glowGeometry.attributes.position.needsUpdate = true;
+  glowGeometry.attributes.size.needsUpdate = true;
+}
+
+function paintStars() {
+  const count = stars.length;
+  for (let i = 0; i < count; i++) {
+    const region = regions[regionOf[i]];
+    const heat = Math.min(1, starUses[i] / 10);
+    if (stars[i].dead) tint.setHex(DIM).multiplyScalar(0.6);
+    else {
+      tint.setHex(region ? region.tone : STAR_TONES[0]);
+      tint.lerp(new THREE.Color(0xfffdf4), heat * 0.8).multiplyScalar(0.5 + heat * 0.7);
+    }
+    if (flaring.has(i)) tint.setHex(FLARE);
+    starMesh.setColorAt(i, tint);
+    glowTone[i * 3] = tint.r; glowTone[i * 3 + 1] = tint.g; glowTone[i * 3 + 2] = tint.b;
+  }
+  if (starMesh.instanceColor) starMesh.instanceColor.needsUpdate = true;
+  glowGeometry.attributes.tone.needsUpdate = true;
+  for (let e = 0; e < links.length; e++) {
+    const link = links[e], offset = e * 6;
+    const region = regions[link.region];
+    const lit = flaring.has(link.a) && flaring.has(link.b);
+    tint.setHex(lit ? FLARE : region ? region.tone : STAR_TONES[0]).multiplyScalar(lit ? 1 : 0.3);
+    for (let v = 0; v < 2; v++) {
+      linkTone[offset + v * 3] = tint.r;
+      linkTone[offset + v * 3 + 1] = tint.g;
+      linkTone[offset + v * 3 + 2] = tint.b;
+    }
+  }
+  linkGeometry.attributes.color.needsUpdate = true;
+}
+
+function uploadFigures() {
+  for (let e = 0; e < links.length; e++) {
+    const link = links[e], offset = e * 6, a = link.a * 3, b = link.b * 3;
+    linkPos[offset] = starPos[a]; linkPos[offset + 1] = starPos[a + 1]; linkPos[offset + 2] = starPos[a + 2];
+    linkPos[offset + 3] = starPos[b]; linkPos[offset + 4] = starPos[b + 1]; linkPos[offset + 5] = starPos[b + 2];
+  }
+  linkGeometry.setDrawRange(0, links.length * 2);
+  linkGeometry.attributes.position.needsUpdate = true;
+}
+
+function renderLegend(count) {
+  legend.replaceChildren();
+  if (empty) { legend.hidden = true; return; }
+  const title = document.createElement('p');
+  title.className = 'legend-title';
+  title.textContent = 'Созвездия · ' + stage(count);
+  legend.append(title);
+  for (const region of regions.slice(0, 5)) {
+    const row = document.createElement('p');
+    row.className = 'legend-row';
+    const swatch = document.createElement('span');
+    swatch.className = 'legend-swatch';
+    swatch.style.background = '#' + region.tone.toString(16).padStart(6, '0');
+    const text = document.createElement('span');
+    text.textContent = region.name + ' · ' + region.size;
+    row.append(swatch, text);
+    legend.append(row);
+  }
+  const note = document.createElement('p');
+  note.className = 'legend-note';
+  note.textContent = 'Звезда — сущность памяти, планеты вокруг — факты о ней. Чем ближе к центру, тем старше знание. '
+    + 'Яркость — как часто оно попадает в ответы. Тусклые красные — замещённые факты. '
+    + 'Созвездия названы по самой памяти и не повторяют земные.';
+  legend.append(note);
+  legend.hidden = false;
+}
+
+function populate(data) {
+  const incoming = (data.nodes || []).slice(0, MAX_STARS);
+  const facts = data.edges || [];
+  empty = incoming.length === 0;
+  indexById = new Map();
+  degree.fill(0);
+  regionOf.fill(0);
+  starUses.fill(0);
+  flaring = new Set();
+  signals = [];
+  signalMesh.count = 0;
+
+  // Birth order: an entity is as old as the first fact that mentioned it.
+  const born = new Map();
+  for (const fact of facts) {
+    const at = Date.parse(fact.createdAt || '') || 0;
+    for (const side of [fact.source, fact.target]) {
+      const key = String(side);
+      if (!born.has(key) || at < born.get(key)) born.set(key, at);
+    }
+  }
+  stars = incoming.map((item, index) => ({
+    id: String(item.id),
+    label: String(item.label || item.id),
+    born: born.get(String(item.id)) ?? 0,
+    dead: false,
+    index,
+  }));
+  stars.forEach((star, index) => indexById.set(star.id, index));
+  const byAge = [...stars].sort((a, b) => (a.born || 0) - (b.born || 0) || a.id.localeCompare(b.id));
+  byAge.forEach((star, rank) => { star.rank = rank; });
+
+  adjacency = stars.map(() => []);
+  planets = [];
+  for (const fact of facts) {
+    const a = indexById.get(String(fact.source)), b = indexById.get(String(fact.target));
+    if (a === undefined || b === undefined) continue;
+    if (a !== b) { adjacency[a].push(b); adjacency[b].push(a); degree[a]++; degree[b]++; }
+    if (planets.length < MAX_PLANETS)
+      planets.push({
+        id: String(fact.id),
+        star: a,
+        other: b,
+        label: String(fact.label || ''),
+        confirmed: fact.sourceType === 'user-confirmed',
+        confidence: Number(fact.confidence ?? 1),
+      });
+  }
+  buildRegions(stars.length);
+  placeStars(stars.length);
+  placeGas(stars.length);
+  buildFigures();
+
+  planetMesh.count = planets.length;
+  planets.forEach((planet, slot) => {
+    const spin = hash(planet.id, 11), tilt = hash(planet.id, 12), size = hash(planet.id, 13);
+    planetOf[slot] = planet.star;
+    planetOrbit[slot] = starRadius[planet.star] * (2.6 + spin * 3.4) + 2;
+    planetPhase[slot] = spin * 6.283;
+    planetTilt[slot] = (tilt - 0.5) * 1.5;
+    planetSize[slot] = (0.5 + size * 0.7) * Math.max(0.5, planet.confidence) * (preferences.nodeSize / 2);
+    planetDead[slot] = 0;
+    tint.setHex(planet.confirmed ? 0xe8c98c : 0x8d7a5e);
+    planetMesh.setColorAt(slot, tint);
+  });
+  if (planetMesh.instanceColor) planetMesh.instanceColor.needsUpdate = true;
+
+  uploadStars();
+  uploadFigures();
+  paintStars();
+  renderLegend(stars.length);
+  fitCamera();
+}
 
 function resize() {
   const w = Math.max(1, innerWidth), h = Math.max(1, innerHeight);
@@ -174,6 +497,16 @@ function resize() {
   renderer.setSize(w, h, false);
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
+}
+
+function fitCamera() {
+  if (userFramed) return;
+  let furthest = 60;
+  for (let i = 0; i < stars.length; i++)
+    furthest = Math.max(furthest, Math.hypot(starPos[i * 3], starPos[i * 3 + 1], starPos[i * 3 + 2]));
+  if (empty) furthest = spread;
+  const half = Math.tan((camera.fov / 2) * Math.PI / 180) * Math.min(1, camera.aspect);
+  want.dist = Math.max(180, Math.min(2600, furthest / Math.max(0.2, half) * 1.2));
 }
 
 function updateCamera() {
@@ -185,8 +518,6 @@ function updateCamera() {
   );
   camera.lookAt(orbit.target);
   camera.updateMatrixWorld();
-  scene.fog.near = Math.max(1, orbit.dist - 250);
-  scene.fog.far = orbit.dist + 340;
 }
 
 function draw() {
@@ -207,406 +538,202 @@ function draw() {
   }
 }
 
-function nodeRadius(i) {
-  const base = 2.4 * (preferences.nodeSize / 2);
-  if (placeholderMode) return base * 0.62;
-  return base * (0.55 + 0.85 * Math.sqrt(degree[i] / Math.max(1, maxDegree)));
+function applyPreferences(value) {
+  preferences = normalizeGolemSettings(value);
+  if (!stars.length) return;
+  placeStars(stars.length);
+  for (let slot = 0; slot < planets.length; slot++) {
+    const planet = planets[slot];
+    planetOrbit[slot] = starRadius[planet.star] * (2.6 + hash(planet.id, 11) * 3.4) + 2;
+    planetSize[slot] = (0.5 + hash(planet.id, 13) * 0.7) * Math.max(0.5, planet.confidence) * (preferences.nodeSize / 2);
+  }
+  uploadStars();
+  uploadFigures();
 }
+canvas.addEventListener('golem-settings', (event) => applyPreferences(event.detail));
 
-function uploadNodes() {
-  const count = Math.min(items.length, MAX_NODES);
-  for (let i = 0; i < count; i++) {
-    matrix.makeScale(radii[i], radii[i], radii[i]);
-    matrix.setPosition(positions[i * 3], positions[i * 3 + 1], positions[i * 3 + 2]);
-    nodeMesh.setMatrixAt(i, matrix);
-  }
-  nodeMesh.count = count;
-  nodeMesh.instanceMatrix.needsUpdate = true;
-  nodeMesh.computeBoundingSphere();
-  glowPositions.set(positions.subarray(0, count * 3));
-  glowGeometry.setDrawRange(0, count);
-  glowGeometry.attributes.position.needsUpdate = true;
-}
-
-function uploadEdges() {
-  const count = Math.min(edges.length, MAX_EDGES);
-  for (let e = 0; e < count; e++) {
-    const edge = edges[e], offset = e * 6, a = edge.a * 3, b = edge.b * 3;
-    edgePositions[offset] = positions[a];
-    edgePositions[offset + 1] = positions[a + 1];
-    edgePositions[offset + 2] = positions[a + 2];
-    edgePositions[offset + 3] = positions[b];
-    edgePositions[offset + 4] = positions[b + 1];
-    edgePositions[offset + 5] = positions[b + 2];
-  }
-  edgeGeometry.setDrawRange(0, count * 2);
-  edgeGeometry.attributes.position.needsUpdate = true;
-}
-
-// Regions grow outward from the busiest nodes. Label propagation was tried first
-// and collapsed to a single label: on a connected graph it merges everything.
-function buildClusters(count) {
-  const wanted = Math.max(1, Math.min(CLUSTER_COLORS.length, Math.round(Math.sqrt(count / 6))));
-  const order = Array.from({length: count}, (_, i) => i)
-    .sort((a, b) => degree[b] - degree[a] || a - b);
-  const seeds = [], blocked = new Set();
-  for (const candidate of order) {
-    if (seeds.length >= wanted) break;
-    if (blocked.has(candidate) || !degree[candidate]) continue;
-    seeds.push(candidate);
-    blocked.add(candidate);
-    for (const neighbour of adjacency[candidate] || []) blocked.add(neighbour);
-  }
-  if (!seeds.length && count) seeds.push(order[0]);
-  const owner = new Int32Array(count).fill(-1);
-  let frontier = [];
-  seeds.forEach((seed, index) => { owner[seed] = index; frontier.push(seed); });
-  while (frontier.length) {
-    const next = [];
-    for (const node of frontier)
-      for (const neighbour of adjacency[node] || [])
-        if (owner[neighbour] === -1) { owner[neighbour] = owner[node]; next.push(neighbour); }
-    frontier = next;
-  }
-  const loose = seeds.length;
-  let hasLoose = false;
-  for (let i = 0; i < count; i++) if (owner[i] === -1) { owner[i] = loose; hasLoose = true; }
-  const groups = new Map();
-  for (let i = 0; i < count; i++) {
-    let group = groups.get(owner[i]);
-    if (!group) groups.set(owner[i], group = []);
-    group.push(i);
-  }
-  clusters = [...groups.entries()]
-    .sort((a, b) => b[1].length - a[1].length)
-    .map(([key, members], index) => {
-      let leader = members[0];
-      for (const member of members) if (degree[member] > degree[leader]) leader = member;
-      for (const member of members) clusterOf[member] = index;
-      const item = items[leader];
-      return {
-        members,
-        size: members.length,
-        color: CLUSTER_COLORS[index % CLUSTER_COLORS.length],
-        title: hasLoose && key === loose
-          ? 'Отдельные знания'
-          : shorten(item ? (item.label || item.id) : ''),
-        centre: new THREE.Vector3(),
-      };
-    });
-}
-
-// Put the camera where the whole brain fits: relaxation changes its size, so a
-// fixed distance left it either a speck or cropped.
-function fitCamera(count) {
-  if (userFramed || !count) return;
-  let furthest = 1;
-  for (let i = 0; i < count; i++)
-    furthest = Math.max(furthest, Math.hypot(positions[i * 3], positions[i * 3 + 1], positions[i * 3 + 2]));
-  const half = Math.tan((camera.fov / 2) * Math.PI / 180) * Math.min(1, camera.aspect);
-  want.dist = Math.max(170, Math.min(950, furthest / Math.max(0.2, half) * 1.08));
-}
-
-// Keep the brain filling the frame: relaxation otherwise shrinks it to a speck.
-function normalizeLayout(count) {
-  if (!count) return;
-  let furthest = 1;
-  for (let i = 0; i < count; i++)
-    furthest = Math.max(furthest, Math.hypot(positions[i * 3], positions[i * 3 + 1], positions[i * 3 + 2]));
-  const target = Math.min(210, 115 + Math.sqrt(count) * 3.2);
-  const scale = target / furthest;
-  if (Math.abs(scale - 1) < 0.015) return;
-  for (let i = 0; i < count * 3; i++) positions[i] *= scale;
-}
-
-function seedLayout(count) {
-  const spread = Math.min(190, 96 + Math.sqrt(count) * 3.4);
-  const total = Math.max(1, clusters.length);
-  clusters.forEach((cluster, index) => {
-    const angle = index * 2.399963229728653;
-    const z = total === 1 ? 0 : 1 - 2 * (index + 0.5) / total;
-    const ring = Math.sqrt(Math.max(0, 1 - z * z));
-    cluster.centre.set(Math.cos(angle) * ring * spread, Math.sin(angle) * ring * spread, z * spread);
-  });
-  for (let i = 0; i < count; i++) {
-    const cluster = clusters[clusterOf[i]];
-    const cx = cluster ? cluster.centre.x : 0, cy = cluster ? cluster.centre.y : 0, cz = cluster ? cluster.centre.z : 0;
-    const local = 16 + Math.sqrt(cluster ? cluster.size : 1) * 7;
-    positions[i * 3] = cx + (noise(i, 1) - 0.5) * local;
-    positions[i * 3 + 1] = cy + (noise(i, 2) - 0.5) * local;
-    positions[i * 3 + 2] = cz + (noise(i, 3) - 0.5) * local;
-    velocities[i * 3] = velocities[i * 3 + 1] = velocities[i * 3 + 2] = 0;
-  }
-}
-
-// One relaxation step: cluster separation, edge springs, local repulsion.
-function relax(count) {
-  for (const cluster of clusters) {
-    let x = 0, y = 0, z = 0;
-    for (const member of cluster.members) {
-      x += positions[member * 3];
-      y += positions[member * 3 + 1];
-      z += positions[member * 3 + 2];
-    }
-    const share = 1 / Math.max(1, cluster.members.length);
-    cluster.centre.set(x * share, y * share, z * share);
-  }
-  for (let a = 0; a < clusters.length; a++)
-    for (let b = a + 1; b < clusters.length; b++) {
-      const first = clusters[a].centre, second = clusters[b].centre;
-      const dx = first.x - second.x, dy = first.y - second.y, dz = first.z - second.z;
-      const far = Math.max(28, Math.hypot(dx, dy, dz));
-      const push = Math.min(2.4, 42000 / (far * far * far));
-      for (const member of clusters[a].members) {
-        velocities[member * 3] += dx / far * push;
-        velocities[member * 3 + 1] += dy / far * push;
-        velocities[member * 3 + 2] += dz / far * push;
-      }
-      for (const member of clusters[b].members) {
-        velocities[member * 3] -= dx / far * push;
-        velocities[member * 3 + 1] -= dy / far * push;
-        velocities[member * 3 + 2] -= dz / far * push;
-      }
-    }
-  for (const edge of edges) {
-    const a = edge.a * 3, b = edge.b * 3;
-    const dx = positions[b] - positions[a];
-    const dy = positions[b + 1] - positions[a + 1];
-    const dz = positions[b + 2] - positions[a + 2];
-    const far = Math.max(1, Math.hypot(dx, dy, dz));
-    const pull = (far - 34) * 0.0055;
-    velocities[a] += dx / far * pull;
-    velocities[a + 1] += dy / far * pull;
-    velocities[a + 2] += dz / far * pull;
-    velocities[b] -= dx / far * pull;
-    velocities[b + 1] -= dy / far * pull;
-    velocities[b + 2] -= dz / far * pull;
-  }
-  const cell = 30, buckets = new Map();
-  for (let i = 0; i < count; i++) {
-    const key = Math.round(positions[i * 3] / cell) + ',' +
-      Math.round(positions[i * 3 + 1] / cell) + ',' + Math.round(positions[i * 3 + 2] / cell);
-    let list = buckets.get(key);
-    if (!list) buckets.set(key, list = []);
-    if (list.length < 18) list.push(i);
-  }
-  for (const list of buckets.values())
-    for (let a = 0; a < list.length; a++)
-      for (let b = a + 1; b < list.length; b++) {
-        const i = list[a] * 3, j = list[b] * 3;
-        const dx = positions[i] - positions[j];
-        const dy = positions[i + 1] - positions[j + 1];
-        const dz = positions[i + 2] - positions[j + 2];
-        const far = Math.max(4, Math.hypot(dx, dy, dz));
-        const push = Math.min(3, 2600 / (far * far));
-        velocities[i] += dx / far * push;
-        velocities[i + 1] += dy / far * push;
-        velocities[i + 2] += dz / far * push;
-        velocities[j] -= dx / far * push;
-        velocities[j + 1] -= dy / far * push;
-        velocities[j + 2] -= dz / far * push;
-      }
-  for (let i = 0; i < count * 3; i++) {
-    velocities[i] -= positions[i] * 0.0022;
-    velocities[i] *= 0.82;
-    positions[i] += Math.max(-9, Math.min(9, velocities[i]));
-  }
-}
-
-function paintNodes() {
-  const count = Math.min(items.length, MAX_NODES);
-  for (let i = 0; i < count; i++) {
-    const cluster = clusters[clusterOf[i]];
-    colorScratch.setHex(highlightedNodes.has(i) ? TRACE_COLOR
-      : cluster ? cluster.color : CLUSTER_COLORS[i % CLUSTER_COLORS.length]);
-    if (placeholderMode) colorScratch.multiplyScalar(0.5);
-    nodeMesh.setColorAt(i, colorScratch);
-  }
-  if (nodeMesh.instanceColor) nodeMesh.instanceColor.needsUpdate = true;
-  for (let i = 0; i < count; i++) {
-    const cluster = clusters[clusterOf[i]];
-    colorScratch.setHex(highlightedNodes.has(i) ? TRACE_COLOR
-      : cluster ? cluster.color : CLUSTER_COLORS[i % CLUSTER_COLORS.length]);
-    colorScratch.multiplyScalar(placeholderMode ? 0.3 : highlightedNodes.has(i) ? 1 : 0.6);
-    glowColors[i * 3] = colorScratch.r;
-    glowColors[i * 3 + 1] = colorScratch.g;
-    glowColors[i * 3 + 2] = colorScratch.b;
-  }
-  glowGeometry.attributes.color.needsUpdate = true;
-}
-
-function paintEdges() {
-  const count = Math.min(edges.length, MAX_EDGES);
-  for (let e = 0; e < count; e++) {
-    const edge = edges[e], offset = e * 6;
-    // Gold marks a fact you confirmed; dim bronze marks one the model extracted.
-    const active = activeFactIds.has(edge.factId);
-    colorScratch.setHex(active ? TRACE_COLOR : edge.confirmed ? EDGE_CONFIRMED : EDGE_EXTRACTED);
-    if (placeholderMode) colorScratch.multiplyScalar(0.45);
-    edgeColors[offset] = edgeColors[offset + 3] = colorScratch.r;
-    edgeColors[offset + 1] = edgeColors[offset + 4] = colorScratch.g;
-    edgeColors[offset + 2] = edgeColors[offset + 5] = colorScratch.b;
-  }
-  edgeGeometry.attributes.color.needsUpdate = true;
-}
-
-function renderLegend() {
-  legend.replaceChildren();
-  if (placeholderMode || !clusters.length) { legend.hidden = true; return; }
-  const title = document.createElement('p');
-  title.className = 'legend-title';
-  title.textContent = 'Области памяти';
-  legend.append(title);
-  for (const cluster of clusters.slice(0, 5)) {
-    if (!cluster.title) continue;
-    const row = document.createElement('p');
-    row.className = 'legend-row';
-    const swatch = document.createElement('span');
-    swatch.className = 'legend-swatch';
-    swatch.style.background = '#' + cluster.color.toString(16).padStart(6, '0');
-    const text = document.createElement('span');
-    text.textContent = cluster.title + ' · ' + cluster.size;
-    row.append(swatch, text);
-    legend.append(row);
-  }
-  const note = document.createElement('p');
-  note.className = 'legend-note';
-  note.textContent = 'Яркая связь — подтверждено вами, тусклая — извлечено ИИ. Бегущие огни показывают факты последнего ответа.';
-  legend.append(note);
-  legend.hidden = false;
-}
-
-function populate(data) {
-  const incoming = data.nodes || [], links = data.edges || [];
-  placeholderMode = incoming.length === 0;
-  indexById = new Map();
-  degree.fill(0);
-  clusterOf.fill(0);
-  highlightedNodes = new Set();
-  if (placeholderMode) {
-    items = Array.from({length: 190}, (_, i) => ({id: 'core-' + i, label: '', placeholder: true}));
-    edges = [];
-    clusters = [];
-    maxDegree = 1;
-    const count = items.length;
-    for (let i = 0; i < count; i++) {
-      const angle = i * 2.399963229728653, z = 1 - 2 * (i + 0.5) / count;
-      const ring = Math.sqrt(Math.max(0, 1 - z * z)), radius = 118 + Math.sin(i * 13.7) * 10;
-      positions[i * 3] = Math.cos(angle) * ring * radius;
-      positions[i * 3 + 1] = Math.sin(angle) * ring * radius;
-      positions[i * 3 + 2] = z * radius;
-      radii[i] = nodeRadius(i);
-    }
-    for (let i = 0; i < count; i++) {
-      const j = (i * 37 + 11) % count;
-      if (i !== j) edges.push({a: i, b: j, factId: '', source: '', target: '', confirmed: false});
-    }
-    layoutLeft = 0;
-    uploadNodes(); uploadEdges(); paintNodes(); paintEdges(); renderLegend();
-    pulses = [];
-    pulseMesh.count = 0;
+function inspect(index) {
+  body.replaceChildren();
+  const heading = document.createElement('h2');
+  if (empty || !stars[index]) {
+    heading.textContent = 'Протооблако';
+    const text = document.createElement('p');
+    text.textContent = 'Звёзд пока нет. Они загорятся, когда из переписки появятся знания.';
+    body.append(heading, text);
+    selected = null;
+    detail.hidden = false;
     return;
   }
-  items = incoming.slice(0, MAX_NODES);
-  items.forEach((item, index) => indexById.set(String(item.id), index));
-  edges = [];
-  adjacency = items.map(() => []);
-  for (const link of links) {
-    if (edges.length >= MAX_EDGES) break;
-    const a = indexById.get(String(link.source)), b = indexById.get(String(link.target));
-    if (a === undefined || b === undefined || a === b) continue;
-    edges.push({
-      a, b,
-      factId: String(link.id),
-      source: String(link.source),
-      target: String(link.target),
-      confirmed: link.sourceType === 'user-confirmed',
-    });
-    adjacency[a].push(b);
-    adjacency[b].push(a);
-    degree[a]++;
-    degree[b]++;
+  const star = stars[index];
+  selected = star.id;
+  heading.textContent = star.label;
+  body.append(heading);
+  const region = regions[regionOf[index]];
+  if (region) {
+    const where = document.createElement('p');
+    where.textContent = 'Созвездие: ' + region.name;
+    body.append(where);
   }
-  maxDegree = Math.max(1, ...items.map((_, i) => degree[i]));
-  buildClusters(items.length);
-  seedLayout(items.length);
-  for (let i = 0; i < items.length; i++) radii[i] = nodeRadius(i);
-  layoutLeft = reduced ? 0 : 110;
-  if (reduced) { for (let step = 0; step < 110; step++) relax(items.length); normalizeLayout(items.length); }
-  fitCamera(items.length);
-  uploadNodes(); uploadEdges(); paintNodes(); paintEdges(); renderLegend();
-  buildPulses();
+  const counts = document.createElement('p');
+  const own = planets.filter((planet) => planet.star === index || planet.other === index);
+  counts.textContent = 'Планет вокруг: ' + own.length + ' · связей: ' + degree[index];
+  body.append(counts);
+  if (star.born) {
+    const age = document.createElement('p');
+    age.textContent = 'Первое упоминание: ' + new Date(star.born).toLocaleDateString('ru-RU');
+    body.append(age);
+  }
+  if (own.length) {
+    const title = document.createElement('p');
+    title.textContent = 'Факты:';
+    const list = document.createElement('ul');
+    for (const planet of own.slice(0, 8)) {
+      const row = document.createElement('li');
+      const partner = stars[planet.star === index ? planet.other : planet.star];
+      row.textContent = planet.label + (partner ? ' — ' + partner.label : '');
+      list.append(row);
+    }
+    body.append(title, list);
+  }
+  userFramed = true;
+  want.target.set(starPos[index * 3], starPos[index * 3 + 1], starPos[index * 3 + 2]);
+  want.dist = Math.max(70, Math.min(want.dist, 190));
+  detail.hidden = false;
 }
 
-function buildPulses() {
-  pulses = pulses.filter((pulse) => pulse.idle);
-  if (placeholderMode) { pulses = []; pulseMesh.count = 0; return; }
-  for (let e = 0; e < edges.length && pulses.length < MAX_PULSES; e++)
-    if (activeFactIds.has(edges[e].factId)) pulses.push({edge: e, phase: noise(e, 7), idle: false});
-  pulseMesh.count = pulses.length;
+function release() {
+  detail.hidden = true;
+  selected = null;
+  want.target.set(0, 0, 0);
+  userFramed = false;
+  fitCamera();
 }
 
-// Resting activity: the brain keeps firing quietly between questions.
-function restingSpark() {
-  if (reduced || placeholderMode || !edges.length || pulses.length >= MAX_PULSES) return;
-  pulses.push({edge: Math.floor(Math.random() * edges.length), phase: 0, idle: true});
+canvas.addEventListener('pointerdown', (event) => {
+  drag = {x: event.clientX, y: event.clientY, moved: false};
+  spin = 0;
+  canvas.setPointerCapture(event.pointerId);
+});
+canvas.addEventListener('pointermove', (event) => {
+  if (!drag) return;
+  const dx = event.clientX - drag.x, dy = event.clientY - drag.y;
+  if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true;
+  want.theta -= dx * 0.005;
+  want.phi = Math.max(0.1, Math.min(Math.PI - 0.1, want.phi - dy * 0.005));
+  spin = -dx * 0.005;
+  drag.x = event.clientX;
+  drag.y = event.clientY;
+});
+canvas.addEventListener('pointerup', (event) => {
+  if (!drag) return;
+  const moved = drag.moved;
+  drag = null;
+  if (moved) return;
+  spin = 0;
+  const rect = canvas.getBoundingClientRect();
+  pointer.set((event.clientX - rect.left) / rect.width * 2 - 1, -(event.clientY - rect.top) / rect.height * 2 + 1);
+  updateCamera();
+  raycaster.setFromCamera(pointer, camera);
+  const hits = raycaster.intersectObject(starMesh);
+  if (hits.length && hits[0].instanceId !== undefined && hits[0].instanceId < stars.length) inspect(hits[0].instanceId);
+  else release();
+});
+canvas.addEventListener('pointercancel', () => { drag = null; });
+canvas.addEventListener('wheel', (event) => {
+  event.preventDefault();
+  userFramed = true;
+  want.dist = Math.max(60, Math.min(2600, want.dist * (event.deltaY > 0 ? 1.12 : 0.89)));
+}, {passive: false});
+document.getElementById('close-detail').addEventListener('click', release);
+addEventListener('keydown', (event) => { if (event.key === 'Escape') release(); });
+
+function flareFacts(ids) {
+  activeFactIds = new Set((ids || []).map(String));
+  flaring = new Set();
+  for (const planet of planets)
+    if (activeFactIds.has(planet.id)) { flaring.add(planet.star); flaring.add(planet.other); }
+  signals = [];
+  for (let e = 0; e < links.length && signals.length < MAX_SIGNALS; e++)
+    if (flaring.has(links[e].a) && flaring.has(links[e].b))
+      signals.push({link: e, phase: hash('sig' + e, 21), idle: false});
+  paintStars();
 }
 
-function updatePulses(delta) {
-  if (!pulses.length) { pulseMesh.count = 0; return; }
+function restingSignal() {
+  if (reduced || empty || !links.length || signals.length >= MAX_SIGNALS) return;
+  signals.push({link: Math.floor(Math.random() * links.length), phase: 0, idle: true});
+}
+
+function updateSignals(delta) {
+  if (!signals.length) { signalMesh.count = 0; return; }
   const step = reduced ? 0 : delta * 0.00035;
-  const size = 1.5 * (preferences.nodeSize / 2) + 1;
   let written = 0;
-  for (const pulse of pulses) {
-    pulse.phase += step * (pulse.idle ? 0.55 : 0.9 + activity * 1.9);
-    if (pulse.idle) { if (pulse.phase >= 1) continue; }
-    else pulse.phase %= 1;
-    const edge = edges[pulse.edge];
-    if (!edge || written >= MAX_PULSES) continue;
-    const a = edge.a * 3, b = edge.b * 3, t = pulse.phase;
-    const scale = pulse.idle ? size * 0.5 : size * (0.85 + activity * 0.55);
-    matrix.makeScale(scale, scale, scale);
+  for (const signal of signals) {
+    signal.phase += step * (signal.idle ? 0.5 : 0.9 + activity * 1.8);
+    if (signal.idle && signal.phase >= 1) continue;
+    if (!signal.idle) signal.phase %= 1;
+    const link = links[signal.link];
+    if (!link || written >= MAX_SIGNALS) continue;
+    const a = link.a * 3, b = link.b * 3, t = signal.phase;
+    const size = (signal.idle ? 0.9 : 1.6 + activity * 0.8) * (preferences.nodeSize / 2) + 0.5;
+    matrix.makeScale(size, size, size);
     matrix.setPosition(
-      positions[a] + (positions[b] - positions[a]) * t,
-      positions[a + 1] + (positions[b + 1] - positions[a + 1]) * t,
-      positions[a + 2] + (positions[b + 2] - positions[a + 2]) * t,
+      starPos[a] + (starPos[b] - starPos[a]) * t,
+      starPos[a + 1] + (starPos[b + 1] - starPos[a + 1]) * t,
+      starPos[a + 2] + (starPos[b + 2] - starPos[a + 2]) * t,
     );
-    pulseMesh.setMatrixAt(written, matrix);
-    colorScratch.setHex(pulse.idle ? 0x6f6450 : 0xffeec0);
-    pulseMesh.setColorAt(written, colorScratch);
+    signalMesh.setMatrixAt(written, matrix);
+    tint.setHex(signal.idle ? 0x6f6450 : FLARE);
+    signalMesh.setColorAt(written, tint);
     written++;
   }
-  pulses = pulses.filter((pulse) => !(pulse.idle && pulse.phase >= 1));
-  pulseMesh.count = written;
-  pulseMesh.instanceMatrix.needsUpdate = true;
-  if (pulseMesh.instanceColor) pulseMesh.instanceColor.needsUpdate = true;
+  signals = signals.filter((signal) => !(signal.idle && signal.phase >= 1));
+  signalMesh.count = written;
+  signalMesh.instanceMatrix.needsUpdate = true;
+  if (signalMesh.instanceColor) signalMesh.instanceColor.needsUpdate = true;
 }
 
-// Live channel: the page used to learn about a finished answer up to 12 seconds
-// late. These events arrive while the work is still happening.
+function orbitPlanets(now) {
+  const count = planets.length;
+  for (let slot = 0; slot < count; slot++) {
+    const star = planetOf[slot], centre = star * 3;
+    const speed = reduced ? 0 : now * 0.00022 / (1 + planetOrbit[slot] * 0.05);
+    const angle = planetPhase[slot] + speed;
+    const radius = planetOrbit[slot];
+    const lift = Math.sin(angle) * radius * planetTilt[slot];
+    const size = planetSize[slot];
+    matrix.makeScale(size, size, size);
+    matrix.setPosition(
+      starPos[centre] + Math.cos(angle) * radius,
+      starPos[centre + 1] + lift,
+      starPos[centre + 2] + Math.sin(angle) * radius * 0.85,
+    );
+    planetMesh.setMatrixAt(slot, matrix);
+  }
+  planetMesh.count = count;
+  planetMesh.instanceMatrix.needsUpdate = true;
+}
+
 function handleEvent(data) {
   switch (data.type) {
     case 'question': activity = Math.max(activity, 0.6); break;
-    case 'recall':
-      activeFactIds = new Set((data.factIds || []).map(String));
-      applyTrace();
-      activity = 1;
-      break;
+    case 'recall': flareFacts(data.factIds); activity = 1; break;
     case 'asking':
-    case 'token':
-      activity = 1;
-      break;
+    case 'token': activity = 1; break;
     case 'answer':
       if (data.traceId) previousTraceId = String(data.traceId);
+      if (data.factIds) flareFacts(data.factIds);
       activity = 1;
       break;
     case 'facts':
       activity = Math.max(activity, 0.7);
-      for (let i = 0; i < 6; i++) restingSpark();
+      notice.textContent = 'Новые знания зажигают звёзды…';
+      lastFingerprint = '';
+      refresh();
       break;
     case 'index':
       activity = Math.max(activity, 0.4);
-      restingSpark(); restingSpark();
+      restingSignal();
       break;
     case 'build':
       notice.textContent = data.state === 'building' ? 'Пересобираю карту памяти…'
@@ -631,118 +758,6 @@ function connectStream() {
   });
 }
 
-function applyTrace() {
-  highlightedNodes = new Set();
-  for (const edge of edges)
-    if (activeFactIds.has(edge.factId)) { highlightedNodes.add(edge.a); highlightedNodes.add(edge.b); }
-  paintNodes();
-  paintEdges();
-  buildPulses();
-}
-
-function applyPreferences(value) {
-  preferences = normalizeGolemSettings(value);
-  const count = Math.min(items.length, MAX_NODES);
-  for (let i = 0; i < count; i++) radii[i] = nodeRadius(i);
-  uploadNodes();
-}
-canvas.addEventListener('golem-settings', (event) => applyPreferences(event.detail));
-
-function inspect(index) {
-  body.replaceChildren();
-  const heading = document.createElement('h2');
-  if (placeholderMode) {
-    heading.textContent = 'Ядро Голема';
-    const text = document.createElement('p');
-    text.textContent = 'Это визуальная оболочка мозга. Реальные нейроны появятся после сохранения знаний или сообщений чата.';
-    body.append(heading, text);
-    selected = null;
-    detail.hidden = false;
-    return;
-  }
-  const item = items[index];
-  selected = String(item.id);
-  heading.textContent = String(item.label || item.id);
-  body.append(heading);
-  const cluster = clusters[clusterOf[index]];
-  if (cluster && cluster.title) {
-    const area = document.createElement('p');
-    area.textContent = 'Область памяти: ' + cluster.title;
-    body.append(area);
-  }
-  const links = document.createElement('p');
-  links.textContent = 'Связей: ' + degree[index];
-  body.append(links);
-  const neighbours = [];
-  for (const edge of edges) {
-    if (neighbours.length >= 8) break;
-    if (edge.a === index) neighbours.push(items[edge.b]);
-    else if (edge.b === index) neighbours.push(items[edge.a]);
-  }
-  if (neighbours.length) {
-    const title = document.createElement('p');
-    title.textContent = 'Соседние узлы:';
-    const list = document.createElement('ul');
-    for (const neighbour of neighbours) {
-      const row = document.createElement('li');
-      row.textContent = String(neighbour.label || neighbour.id);
-      list.append(row);
-    }
-    body.append(title, list);
-  }
-  // Fly to the node instead of leaving the camera where it was.
-  userFramed = true;
-  want.target.set(positions[index * 3], positions[index * 3 + 1], positions[index * 3 + 2]);
-  want.dist = Math.max(130, Math.min(want.dist, 260));
-  detail.hidden = false;
-}
-
-function release() {
-  detail.hidden = true;
-  selected = null;
-  want.target.set(0, 0, 0);
-  userFramed = false;
-  fitCamera(Math.min(items.length, MAX_NODES));
-}
-
-canvas.addEventListener('pointerdown', (event) => {
-  drag = {x: event.clientX, y: event.clientY, moved: false};
-  spin = 0;
-  canvas.setPointerCapture(event.pointerId);
-});
-canvas.addEventListener('pointermove', (event) => {
-  if (!drag) return;
-  const dx = event.clientX - drag.x, dy = event.clientY - drag.y;
-  if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true;
-  want.theta -= dx * 0.005;
-  want.phi = Math.max(0.16, Math.min(Math.PI - 0.16, want.phi - dy * 0.005));
-  spin = -dx * 0.005;
-  drag.x = event.clientX;
-  drag.y = event.clientY;
-});
-canvas.addEventListener('pointerup', (event) => {
-  if (!drag) return;
-  const moved = drag.moved;
-  drag = null;
-  if (moved) return;
-  spin = 0;
-  const rect = canvas.getBoundingClientRect();
-  mouse.set((event.clientX - rect.left) / rect.width * 2 - 1, -(event.clientY - rect.top) / rect.height * 2 + 1);
-  updateCamera();
-  raycaster.setFromCamera(mouse, camera);
-  const hits = raycaster.intersectObject(nodeMesh);
-  if (hits.length && hits[0].instanceId !== undefined && hits[0].instanceId < items.length) inspect(hits[0].instanceId);
-  else release();
-});
-canvas.addEventListener('pointercancel', () => { drag = null; });
-canvas.addEventListener('wheel', (event) => {
-  event.preventDefault();
-  userFramed = true;
-  want.dist = Math.max(130, Math.min(950, want.dist * (event.deltaY > 0 ? 1.12 : 0.89)));
-}, {passive: false});
-document.getElementById('close-detail').addEventListener('click', release);
-addEventListener('keydown', (event) => { if (event.key === 'Escape') release(); });
-
 async function refresh() {
   if (loading) return;
   loading = true;
@@ -762,6 +777,7 @@ async function refresh() {
       lastFingerprint = fingerprint;
       populate(data);
       if (selected !== null && !indexById.has(String(selected))) release();
+      if (activeFactIds.size) flareFacts([...activeFactIds]);
     }
     notice.textContent = '';
   } catch (error) {
@@ -781,8 +797,7 @@ async function refreshTraces() {
     const id = String(latest.id);
     if (id === previousTraceId) return;
     previousTraceId = id;
-    activeFactIds = new Set((latest.fact_ids || []).map(String));
-    applyTrace();
+    flareFacts(latest.fact_ids || []);
   } catch (error) { console.warn('Golem trace refresh:', error.message); }
 }
 
@@ -820,30 +835,21 @@ function animate(now) {
   }
   previous = now;
   if (document.hidden || contextLost) return;
-  if (layoutLeft > 0) {
-    const steps = Math.min(layoutLeft, frameAverage > 30 ? 1 : 3);
-    for (let step = 0; step < steps; step++) relax(items.length);
-    layoutLeft -= steps;
-    normalizeLayout(items.length);
-    fitCamera(items.length);
-    uploadNodes();
-    uploadEdges();
-  }
   activity = Math.max(0, activity - delta * 0.00045);
-  if (now - lastSpark > (activity > 0.2 ? 240 : 950)) { lastSpark = now; restingSpark(); }
-  // Breathing: the brain is never a still frame, even with nothing to answer.
-  const breath = reduced ? 0 : Math.sin(now * 0.00055);
-  keyLight.intensity = 1.75 + breath * 0.18 + activity * 0.55;
-  glowMaterial.opacity = 0.3 + breath * 0.05 + activity * 0.26;
-  brain.scale.setScalar(1 + breath * 0.006);
-  dust.rotation.y -= delta * 0.000012;
-  if (preferences.autoRotate && !reduced && !drag) want.theta += delta * 0.00008;
+  if (now - lastSignal > (activity > 0.2 ? 260 : 1100)) { lastSignal = now; restingSignal(); }
+  const breath = reduced ? 0 : Math.sin(now * 0.00045);
+  coreLight.intensity = 2.1 + breath * 0.25 + activity * 0.6;
+  glowMaterial.uniforms.uScale.value = 1 + breath * 0.05 + activity * 0.25;
+  bulge.material.opacity = Math.min(1, 0.3 + activity * 0.3 + breath * 0.05 + (empty ? 0 : 0.18));
+  // The whole disc turns slowly, like a galaxy should.
+  if (preferences.autoRotate && !reduced && !drag) want.theta += delta * 0.00006;
   if (!drag && Math.abs(spin) > 0.00002) { want.theta += spin; spin *= 0.94; }
   orbit.theta += (want.theta - orbit.theta) * 0.16;
   orbit.phi += (want.phi - orbit.phi) * 0.16;
   orbit.dist += (want.dist - orbit.dist) * 0.12;
   orbit.target.lerp(want.target, 0.1);
-  updatePulses(delta);
+  if (planets.length) orbitPlanets(now);
+  updateSignals(delta);
   draw();
 }
 requestAnimationFrame(animate);
