@@ -11,3 +11,9 @@ test('PostgreSQL canonical mode and migration are explicit',async()=>{
  assert.match(server,/chatHistory\(12\)/);
  assert.equal(pkg.scripts['migrate:postgres'],'node scripts/migrate-postgres.mjs');
 });
+test('a recorded exchange does not re-read the whole archive',async()=>{
+ const store=await readFile('core/store.mjs','utf8');
+ assert.match(store,/scheduleDerivedRefresh/);
+ assert.doesNotMatch(store,/count:\(await chatHistory\(\)\)\.length/,'the unused count forced a second full-table read');
+ assert.doesNotMatch(store,/await rebuildChatGraph\(messages\)/,'graph rebuilds are coalesced, not run per message');
+});

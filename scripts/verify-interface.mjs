@@ -34,6 +34,7 @@ try {
       ...process.env,
       PORT: String(port),
       AMAYORI_GOLEM_AUTO_BUILD: "0",
+      AMAYORI_DERIVED_REFRESH_MS: "0",
       AMAYORI_DATABASE_URL: "",
       AMAYORI_GRAPHITI_BRIDGE_URL: "",
       AMAYORI_EMBEDDING_MODEL: "",
