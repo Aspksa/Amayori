@@ -24,3 +24,5 @@ jobs:
       - run: node --check public/chat-avatar.js
       - run: node --check public/knowledge-map.js
       - run: node --check core/bridges.mjs
+      - run: node --check public/golem-view.js
+      - run: node --check core/golem-cortex.mjs
