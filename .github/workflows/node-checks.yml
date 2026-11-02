@@ -30,8 +30,6 @@ jobs:
       - run: node --check core/cloud-client.mjs
       - run: node --check core/store.mjs
 
-      - run: node --check public/golem-webgl.js
-      - run: node --check public/golem-six.js
       - run: node --check core/postgres.mjs
       - run: node --check core/golem-auto.mjs
 
@@ -42,3 +40,10 @@ jobs:
       - run: node --check core/chat-memory.mjs
       - run: node --check public/golem-state.js
       - run: node --check scripts/check-dependencies.mjs
+      - run: node --check public/ui.js
+      - name: Install browser for interface checks
+        if: runner.os == 'Linux'
+        run: npx playwright install chromium --with-deps --only-shell
+      - name: Check interface in Chromium
+        if: runner.os == 'Linux'
+        run: npm run test:ui

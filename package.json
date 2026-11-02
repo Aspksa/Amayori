@@ -1,13 +1,14 @@
 {
   "name": "amayori",
-  "version": "0.1.0",
+  "version": "0.6.0",
   "private": true,
   "type": "module",
   "scripts": {
     "start": "node server.mjs",
     "test": "node --test",
     "migrate:postgres": "node scripts/migrate-postgres.mjs",
-    "training:export": "node scripts/export-reviewed-dataset.mjs"
+    "training:export": "node scripts/export-reviewed-dataset.mjs",
+    "test:ui": "node scripts/verify-interface.mjs"
   },
   "dependencies": {
     "pg": "^8.13.1",
@@ -15,5 +16,8 @@
   },
   "engines": {
     "node": ">=22"
+  },
+  "devDependencies": {
+    "playwright": "1.62.1"
   }
 }

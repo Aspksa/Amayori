@@ -2,14 +2,14 @@ import * as THREE from '/three.module.js';
 import {normalizeGolemSettings} from '/golem-state.js';
 const canvas=document.getElementById('brain'),detail=document.getElementById('detail'),body=document.getElementById('detail-body'),notice=document.getElementById('notice');
 let renderer;try{renderer=new THREE.WebGLRenderer({canvas,antialias:true,powerPreference:'high-performance'});}catch(e){notice.textContent='3D недоступен: '+e.message;throw e}
-renderer.setClearColor(0x000000,1);
+renderer.setClearColor(0x0c0d10,1);
 let preferences=normalizeGolemSettings(),lastHeartbeat=-Infinity;
 try{const response=await fetch('/api/golem/settings',{cache:'no-store'});if(response.ok)preferences=normalizeGolemSettings(await response.json())}catch(error){console.warn('Golem settings:',error.message)}
 const scene=new THREE.Scene(),camera=new THREE.PerspectiveCamera(48,1,.1,3000),brain=new THREE.Group();scene.add(brain);
 const nodes=[],lines=[],nodeMap=new Map(),raycaster=new THREE.Raycaster(),mouse=new THREE.Vector2();
 let distance=440,drag=null,selected=null,loading=false,lastFingerprint='',lastUpdate=0,contextLost=false;
 const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;let frameAverage=16.7,previousTraceId=null,activeFactIds=new Set();
-const colors=[0xd4a052,0x9f344d,0x627aa7,0xe3c77d];
+const colors=[0xd6b775,0xa9997b,0xdccb9e,0x7f7767];
 function resize(){const w=Math.max(1,innerWidth),h=Math.max(1,innerHeight);renderer.setPixelRatio(Math.min(devicePixelRatio||1,frameAverage>34?1:frameAverage>23?1.25:Math.min(w,h)<650?1.25:1.7));renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix()}
 function draw(){
  try{

@@ -50,7 +50,7 @@ function draw(now) {
   }
   for (let i = 0; i < n; i++) {
     const p = positions[i], size = (1.3 + (p.z + 1) * 1.2) * preferences.nodeSize / 2;
-    ctx.fillStyle = i < graph.nodes.length ? '#e6ba72' : 'rgba(146,166,219,.55)';
+    ctx.fillStyle = i < graph.nodes.length ? '#e6ba72' : 'rgba(158,144,116,.55)';
     ctx.beginPath(); ctx.arc(p.x, p.y, size, 0, Math.PI * 2); ctx.fill();
   }
   if (preferences.autoRotate && !matchMedia('(prefers-reduced-motion: reduce)').matches) angle += elapsed * .000084;

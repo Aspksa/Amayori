@@ -13,9 +13,10 @@ import {extractKnowledge} from './core/knowledge-extractor.mjs';
 import {runEmbeddingBatch,embeddingJobStatus} from './core/embedding-worker.mjs';
 import {initDatabase,databaseStatus,saveFact,findFacts,knowledgeGraph,saveFeedback,feedbackStats,golemKnowledgePage,golemVectorStatus,golemFactSource,golemSimilar,embeddingProgress,recentUserMessageId,knowledgeConflicts,relatedFacts,golemTraceStore,golemTraces,golemImmuneReport,golemBridges} from './core/postgres.mjs';
 const root=path.dirname(fileURLToPath(import.meta.url));
+const packageInfo=JSON.parse(await fs.readFile(path.join(root,'package.json'),'utf8'));
 const host='127.0.0.1',port=Number(process.env.PORT||57474);
-const routes={'/golem-state.js':'golem-state.js','/golem':'golem.html','/golem.html':'golem.html','/golem-immersive.js':'golem-immersive.js','/golem-fallback.js':'golem-fallback.js','/golem-immersive.css':'golem-immersive.css','/':'index.html','/index.html':'index.html','/style.css':'style.css','/chat-avatar.js':'chat-avatar.js','/app.js':'app.js','/knowledge-map.js':'knowledge-map.js','/golem-knowledge-tools.js':'golem-knowledge-tools.js','/golem-six.js':'golem-six.js'};
-const types={'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8'};
+const routes={'/ui.js':'ui.js','/icons.svg':'icons.svg','/favicon.svg':'favicon.svg','/golem-state.js':'golem-state.js','/golem':'golem.html','/golem.html':'golem.html','/golem-immersive.js':'golem-immersive.js','/golem-fallback.js':'golem-fallback.js','/golem-immersive.css':'golem-immersive.css','/':'index.html','/index.html':'index.html','/style.css':'style.css','/chat-avatar.js':'chat-avatar.js','/app.js':'app.js','/knowledge-map.js':'knowledge-map.js'};
+const types={'.svg':'image/svg+xml','.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8'};
 const json=(res,code,data)=>{res.writeHead(code,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(JSON.stringify(data))};
 async function body(req){let data='';for await(const part of req){data+=part;if(data.length>30000)throw Error('Слишком большой запрос')}return JSON.parse(data||'{}')}
 const defaultSettings={model:'',endpoint:'https://foundation-models.api.cloud.ru/v1/chat/completions',apiKey:''};
@@ -68,7 +69,7 @@ const server=http.createServer(async(req,res)=>{
   if(req.method==='POST'&&p==='/api/feedback'){const b=await body(req);return json(res,200,await saveFeedback(b))}
   if(req.method==='GET'&&p==='/api/feedback/stats')return json(res,200,await feedbackStats());
   if(req.method==='GET'&&p==='/api/database/status')return json(res,200,await databaseStatus());
-  if(req.method==='GET'&&p==='/api/health')return json(res,200,{ok:true,name:'Amayori',version:'0.5.0'});
+  if(req.method==='GET'&&p==='/api/health')return json(res,200,{ok:true,name:'Amayori',version:packageInfo.version});
   if(req.method==='GET'&&p==='/api/settings'){const s=await settings();return json(res,200,{model:s.model,endpoint:s.endpoint,hasKey:!!s.apiKey})}
   if(req.method==='POST'&&p==='/api/settings'){const b=await body(req),old=await settings();if(typeof b.model!=='string'||typeof b.endpoint!=='string')return json(res,400,{error:'Неверные настройки'});const s={model:b.model.trim().slice(0,150),endpoint:b.endpoint.trim().slice(0,500),apiKey:typeof b.apiKey==='string'&&b.apiKey.trim()?b.apiKey.trim():old.apiKey};if(s.apiKey.length>2000)return json(res,400,{error:'Слишком длинный ключ'});let u;try{u=new URL(s.endpoint)}catch{return json(res,400,{error:'Неверный адрес Cloud.ru'})}if(u.protocol!=='https:'||!(u.hostname==='cloud.ru'||u.hostname.endsWith('.cloud.ru'))||u.username||u.password)return json(res,400,{error:'Укажите HTTPS адрес Cloud.ru'});await write('cloudru-settings.json',s);return json(res,200,{ok:true})}
   if(req.method==='GET'&&p==='/api/models'){const s=await settings();return json(res,200,{models:await cloudModels(s)})}
