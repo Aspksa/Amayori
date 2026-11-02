@@ -16,7 +16,15 @@
     selected = null,
     request = 0,
     loading = false,
+    semanticVisible = false,
     source = "";
+  function updateInspectorVisibility() {
+    const visible = graph.nodes.length > 0 || semanticVisible;
+    document.querySelector(".graph-inspector").hidden = !visible;
+    document
+      .querySelector(".graph-workspace")
+      .classList.toggle("is-empty", !visible);
+  }
   function layout() {
     const w = canvas.clientWidth,
       h = canvas.clientHeight;
@@ -153,10 +161,7 @@
       $("graph-count").textContent = graph.nodes.length
         ? graph.nodes.length + " узлов · " + graph.edges.length + " связей"
         : "";
-      document
-        .querySelector(".graph-workspace")
-        .classList.toggle("is-empty", !graph.nodes.length);
-      document.querySelector(".graph-inspector").hidden = !graph.nodes.length;
+      updateInspectorVisibility();
       $("map-actions").hidden = !graph.nodes.length;
       $("golem-diagnostics").textContent = graph.nodes.length
         ? source === "postgresql"
@@ -194,6 +199,9 @@
     );
   }
   function inspect(node) {
+    semanticVisible = false;
+    $("golem-similar-results").replaceChildren();
+    updateInspectorVisibility();
     selected = String(node.id);
     $("golem-selected").textContent = node.label || node.id;
     const edges = graph.edges.filter(
@@ -329,6 +337,14 @@
     void load(true);
   });
   $("graph-reset").addEventListener("click", () => {
+    semanticVisible = false;
+    selected = null;
+    $("golem-selected").textContent = "Выберите узел";
+    $("golem-source").replaceChildren();
+    document.querySelector(".inspector-hint").textContent =
+      "Нажмите на точку, чтобы увидеть её связи и источники.";
+    $("golem-similar-results").replaceChildren();
+    updateInspectorVisibility();
     changeZoom(1 / zoom);
     pan = { x: 0, y: 0 };
     filter = "";
@@ -347,11 +363,21 @@
       button = $("golem-similar");
     button.disabled = true;
     target.replaceChildren();
+    semanticVisible = true;
+    selected = null;
+    $("golem-source").replaceChildren();
+    $("golem-selected").textContent = "Похожие воспоминания";
+    document.querySelector(".inspector-hint").textContent = text;
+    updateInspectorVisibility();
+    const pending = document.createElement("li");
+    pending.textContent = "Ищем воспоминания…";
+    target.append(pending);
     try {
       const data = await api("/api/golem/similar", {
         method: "POST",
         body: JSON.stringify({ text }),
       });
+      target.replaceChildren();
       for (const match of data.results) {
         const li = document.createElement("li");
         li.textContent = match.content;
@@ -363,6 +389,7 @@
         target.append(li);
       }
     } catch (error) {
+      target.replaceChildren();
       const li = document.createElement("li");
       li.textContent = error.message;
       target.append(li);

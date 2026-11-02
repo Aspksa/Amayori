@@ -129,7 +129,9 @@ try {
   ];
   let settings = { model: "test-model", hasKey: true },
     brain = { defaultView: "original", autoRotate: true, nodeSize: 2 },
-    calls = 0;
+    calls = 0,
+    semanticScenario = false,
+    semanticMode = "matches";
   const mockRoute = async (route) => {
     const url = new URL(route.request().url()),
       p = url.pathname,
@@ -154,18 +156,26 @@ try {
       };
     else if (p === "/api/chats") data = { messages };
     else if (p === "/api/memory/status")
-      data = { messages: messages.length, mode: "local" };
+      data = {
+        messages: messages.length,
+        mode: semanticScenario ? "postgresql" : "local",
+      };
     else if (p === "/api/database/status")
-      data = { enabled: false, connected: false };
+      data = { enabled: semanticScenario, connected: semanticScenario };
     else if (p === "/api/golem/embedding-status")
-      data = { configured: false, total: 0, indexed: 0 };
-    else if (p === "/api/graph") data = graph;
+      data = {
+        configured: semanticScenario,
+        total: messages.length,
+        indexed: semanticScenario ? messages.length : 0,
+      };
+    else if (p === "/api/graph")
+      data = semanticScenario ? { nodes: [], edges: [] } : graph;
     else if (p === "/api/golem/knowledge")
       data = {
         nodes: [],
         edges: [],
         total: 0,
-        source: "postgresql-unavailable",
+        source: semanticScenario ? "postgresql" : "postgresql-unavailable",
       };
     else if (p === "/api/knowledge/facts") data = { facts };
     else if (p === "/api/knowledge/related") data = { facts: [facts[1]] };
@@ -213,9 +223,20 @@ try {
         usedFactIds: [],
       };
     } else if (p === "/api/golem/index-batch") data = { configured: false };
-    else if (p === "/api/golem/similar")
-      data = { results: [{ content: "План сада и дорожек", distance: 0.1 }] };
-    else
+    else if (p === "/api/golem/similar") {
+      await delay(150);
+      if (semanticScenario && semanticMode === "error")
+        return route.fulfill({
+          status: 503,
+          json: { error: "Поиск временно недоступен" },
+        });
+      data = {
+        results:
+          semanticScenario && semanticMode === "empty"
+            ? []
+            : [{ content: "План сада и дорожек", distance: 0.1 }],
+      };
+    } else
       return route.fulfill({
         status: 404,
         json: { error: "Unexpected mock endpoint: " + p },
@@ -623,6 +644,51 @@ try {
   assert.match(
     await phone.locator("#knowledge-map").getAttribute("aria-label"),
     /100%/,
+  );
+  semanticScenario = true;
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: width < 600 ? 844 : 950 });
+    await page.goto(base + "/#graph");
+    await page.reload();
+    await page.locator(".graph-workspace.is-empty").waitFor();
+    await page.locator("#golem-similar").waitFor({ state: "visible" });
+    for (const [mode, expected] of [
+      ["matches", "План сада и дорожек"],
+      ["empty", "Похожих воспоминаний пока нет."],
+      ["error", "Поиск временно недоступен"],
+    ]) {
+      semanticMode = mode;
+      await page.locator("#golem-search").fill("сад");
+      await page.locator("#golem-similar").click();
+      const refreshed = page.waitForResponse((response) =>
+        response.url().includes("/api/golem/knowledge"),
+      );
+      await page.evaluate(() =>
+        document.dispatchEvent(new Event("amayori-chat-updated")),
+      );
+      await refreshed;
+      await page.waitForFunction(
+        (text) =>
+          document
+            .getElementById("golem-similar-results")
+            .textContent.includes(text),
+        expected,
+      );
+      assert.equal(await page.locator(".graph-inspector").isVisible(), true);
+      assert.equal(await page.locator(".graph-workspace.is-empty").count(), 0);
+      await page
+        .locator("#golem-similar-results li")
+        .first()
+        .scrollIntoViewIfNeeded();
+      assert.equal(
+        await page.locator("#golem-similar-results li").first().isVisible(),
+        true,
+      );
+      assert.equal(await page.locator("#graph-count").textContent(), "");
+    }
+  }
+  checks.push(
+    "Semantic matches, no-match messages and errors stay visible on an empty graph, including refresh and mobile layout",
   );
   assert.deepEqual(errors, [], "no browser JavaScript errors");
   console.log(
