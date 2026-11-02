@@ -2,6 +2,9 @@
 Called by the local Node server, not by a separate BAT.
 """
 import importlib.util
+import os
+import shutil
+import tempfile
 import json
 import subprocess
 import sys
@@ -32,7 +35,20 @@ def main():
         print("Installing optional Golem dependencies...", flush=True)
         subprocess.run([sys.executable, "-m", "pip", "install", "-r", str(ROOT / "integrations/golem/requirements.txt")], check=True, timeout=900)
     from build import build
-    build()
+    OUT.mkdir(parents=True, exist_ok=True)
+    stage = Path(tempfile.mkdtemp(prefix="golem-stage-", dir=str(OUT.parent)))
+    try:
+        os.environ["AMAYORI_GOLEM_OUTPUT"] = str(stage)
+        import build as builder
+        builder.OUT = stage
+        build()
+        for filename in ("golem_cortex.json", "golem_vectors.npy", "metadata.json"):
+            if not (stage / filename).is_file():
+                raise RuntimeError("Incomplete brain build: " + filename)
+        for filename in ("golem_vectors.npy", "golem_cortex.json", "metadata.json"):
+            os.replace(stage / filename, OUT / filename)
+    finally:
+        shutil.rmtree(stage, ignore_errors=True)
 
 if __name__ == "__main__":
     try:
