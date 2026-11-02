@@ -1,19 +1,31 @@
 import * as THREE from '/three.module.js';
+import {normalizeGolemSettings} from '/golem-state.js';
 const canvas=document.getElementById('brain'),detail=document.getElementById('detail'),body=document.getElementById('detail-body'),notice=document.getElementById('notice');
 let renderer;try{renderer=new THREE.WebGLRenderer({canvas,antialias:true,powerPreference:'high-performance'});}catch(e){notice.textContent='3D недоступен: '+e.message;throw e}
 renderer.setClearColor(0x000000,1);
+let preferences=normalizeGolemSettings(),lastHeartbeat=-Infinity;
+try{const response=await fetch('/api/golem/settings',{cache:'no-store'});if(response.ok)preferences=normalizeGolemSettings(await response.json())}catch(error){console.warn('Golem settings:',error.message)}
 const scene=new THREE.Scene(),camera=new THREE.PerspectiveCamera(48,1,.1,3000),brain=new THREE.Group();scene.add(brain);
 const nodes=[],lines=[],nodeMap=new Map(),raycaster=new THREE.Raycaster(),mouse=new THREE.Vector2();
 let distance=440,drag=null,selected=null,loading=false,lastFingerprint='',lastUpdate=0,contextLost=false;
 const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;let frameAverage=16.7,previousTraceId=null,activeFactIds=new Set();
 const colors=[0xd4a052,0x9f344d,0x627aa7,0xe3c77d];
 function resize(){const w=Math.max(1,innerWidth),h=Math.max(1,innerHeight);renderer.setPixelRatio(Math.min(devicePixelRatio||1,frameAverage>34?1:frameAverage>23?1.25:Math.min(w,h)<650?1.25:1.7));renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix()}
-function draw(){camera.position.set(0,0,distance);camera.lookAt(0,0,0);renderer.render(scene,camera)}
+function draw(){
+ try{
+  camera.position.set(0,0,distance);camera.lookAt(0,0,0);renderer.render(scene,camera);
+  if(renderer.getContext().isContextLost())return;
+  const now=performance.now();
+  if(now-lastHeartbeat>1000){lastHeartbeat=now;canvas.dispatchEvent(new Event('golem-rendered'))}
+ }catch(error){contextLost=true;canvas.dispatchEvent(new CustomEvent('golem-render-error',{detail:'Ошибка 3D — работает резервная карта: '+error.message}))}
+}
+function applyPreferences(value){preferences=normalizeGolemSettings(value);for(const node of nodes)node.scale.setScalar(preferences.nodeSize/2)}
+canvas.addEventListener('golem-settings',event=>applyPreferences(event.detail));
 function clear(){for(const o of [...nodes,...lines]){brain.remove(o);if(o.geometry!==sharedNodeGeometry&&!placeholderGeometries.includes(o.geometry))o.geometry.dispose();o.material.dispose()}nodes.length=0;lines.length=0;nodeMap.clear()}
 function spherePoint(i,total,radius){const a=i*2.399963229728653,z=1-2*(i+.5)/total,r=Math.sqrt(Math.max(0,1-z*z));return new THREE.Vector3(Math.cos(a)*r*radius,Math.sin(a)*r*radius,z*radius)}
 const sharedNodeGeometry=new THREE.SphereGeometry(2.5,8,6);const placeholderGeometries=[new THREE.SphereGeometry(2.1,7,5),new THREE.SphereGeometry(1.05,7,5)];function highlightTrace(){const highlighted=new Set();for(const line of lines){const active=activeFactIds.has(String(line.userData.factId));line.material.color.setHex(active?0xffd47c:0xb68c55);line.material.opacity=active?.95:.25;if(active){highlighted.add(String(line.userData.source));highlighted.add(String(line.userData.target))}}for(let i=0;i<nodes.length;i++){const node=nodes[i];if(!node.userData.placeholder)node.material.color.setHex(highlighted.has(String(node.userData.id))?0xffd47c:colors[i%4])}}
-function populate(data){clear();const items=data.nodes||[],links=data.edges||[];const n=Math.min(items.length,1200);if(!n){const count=190;for(let i=0;i<count;i++){const p=spherePoint(i,count,118+Math.sin(i*13.7)*10);const o=new THREE.Mesh(placeholderGeometries[i%13===0?0:1],new THREE.MeshBasicMaterial({color:colors[i%4],transparent:true,opacity:.5}));o.position.copy(p);o.userData={placeholder:true};brain.add(o);nodes.push(o)}for(let i=0;i<count;i++){const j=(i*37+11)%count;if(i===j)continue;connect(nodes[i].position,nodes[j].position,0x524331,.12)}return}
-for(let i=0;i<n;i++){const item=items[i],p=spherePoint(i,n,Math.min(165,90+Math.sqrt(n)*3));const o=new THREE.Mesh(sharedNodeGeometry,new THREE.MeshBasicMaterial({color:colors[i%4]}));o.position.copy(p);o.userData={...item,placeholder:false};brain.add(o);nodes.push(o);nodeMap.set(String(item.id),o)}
+function populate(data){clear();const items=data.nodes||[],links=data.edges||[];const n=Math.min(items.length,1200);if(!n){const count=190;for(let i=0;i<count;i++){const p=spherePoint(i,count,118+Math.sin(i*13.7)*10);const o=new THREE.Mesh(placeholderGeometries[i%13===0?0:1],new THREE.MeshBasicMaterial({color:colors[i%4],transparent:true,opacity:.5}));o.position.copy(p);o.scale.setScalar(preferences.nodeSize/2);o.userData={placeholder:true};brain.add(o);nodes.push(o)}for(let i=0;i<count;i++){const j=(i*37+11)%count;if(i===j)continue;connect(nodes[i].position,nodes[j].position,0x524331,.12)}return}
+for(let i=0;i<n;i++){const item=items[i],p=spherePoint(i,n,Math.min(165,90+Math.sqrt(n)*3));const o=new THREE.Mesh(sharedNodeGeometry,new THREE.MeshBasicMaterial({color:colors[i%4]}));o.position.copy(p);o.scale.setScalar(preferences.nodeSize/2);o.userData={...item,placeholder:false};brain.add(o);nodes.push(o);nodeMap.set(String(item.id),o)}
 for(const edge of links.slice(0,1500)){const a=nodeMap.get(String(edge.source)),b=nodeMap.get(String(edge.target));if(a&&b){connect(a.position,b.position,0xb68c55,.25);Object.assign(lines[lines.length-1].userData,{factId:String(edge.id),source:String(edge.source),target:String(edge.target)})}}highlightTrace()}
 function connect(a,b,color,opacity){const o=new THREE.Line(new THREE.BufferGeometry().setFromPoints([a,b]),new THREE.LineBasicMaterial({color,transparent:true,opacity,depthWrite:false}));brain.add(o);lines.push(o)}
 async function refresh(){if(loading)return;loading=true;try{const r=await fetch('/api/golem/knowledge?limit=300');if(!r.ok)throw Error('HTTP '+r.status);let data=await r.json();if(!data.nodes?.length){const f=await fetch('/api/graph');if(f.ok){const g=await f.json();if(g.nodes?.length)data=g}}const fingerprint=JSON.stringify([data.nodes,data.edges]);if(fingerprint!==lastFingerprint){lastFingerprint=fingerprint;populate(data);if(selected){const same=nodeMap.get(String(selected));if(!same){detail.hidden=true;selected=null}}}notice.textContent='';lastUpdate=Date.now()}catch(e){notice.textContent='Нет связи с памятью: '+e.message}finally{loading=false}}
@@ -26,6 +38,7 @@ canvas.addEventListener('pointercancel',()=>drag=null);
 canvas.addEventListener('wheel',e=>{e.preventDefault();distance=Math.max(190,Math.min(950,distance*(e.deltaY>0?1.1:.9)))},{passive:false});
 document.getElementById('close-detail').addEventListener('click',()=>{detail.hidden=true;selected=null});
 addEventListener('keydown',e=>{if(e.key==='Escape'){detail.hidden=true;selected=null}});
-canvas.addEventListener('webglcontextlost',e=>{e.preventDefault();contextLost=true;notice.textContent='Восстановление 3D-контекста…'});canvas.addEventListener('webglcontextrestored',()=>{contextLost=false;lastFingerprint='';resize();refresh();refreshTraces();notice.textContent=''});addEventListener('resize',resize);
+canvas.addEventListener('webglcontextlost',e=>{e.preventDefault();contextLost=true;notice.textContent='Восстановление 3D-контекста…'});canvas.addEventListener('webglcontextrestored',()=>{contextLost=false;lastHeartbeat=-Infinity;lastFingerprint='';resize();refresh();refreshTraces();notice.textContent=''});addEventListener('resize',resize);
 resize();populate({nodes:[],edges:[]});refresh();refreshTraces();setInterval(()=>{if(!document.hidden){refresh();refreshTraces()}},12000);
-let previous=0;function animate(now){requestAnimationFrame(animate);if(previous){const before=frameAverage;frameAverage=frameAverage*.96+Math.min(100,now-previous)*.04;if((before<24&&frameAverage>=24)||(before>34&&frameAverage<=34))resize()}if(!document.hidden&&!contextLost){if(!reduced&&!drag)brain.rotation.y+=Math.min((now-previous)||16,50)*.000035;draw()}previous=now}requestAnimationFrame(animate);
+let previous=0;function animate(now){requestAnimationFrame(animate);if(previous){const before=frameAverage;frameAverage=frameAverage*.96+Math.min(100,now-previous)*.04;if((before<24&&frameAverage>=24)||(before>34&&frameAverage<=34))resize()}if(!document.hidden&&!contextLost){if(preferences.autoRotate&&!reduced&&!drag)brain.rotation.y+=Math.min((now-previous)||16,50)*.000035;draw()}previous=now}requestAnimationFrame(animate);
+
