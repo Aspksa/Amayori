@@ -4,7 +4,7 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {read,write,record,chatHistory,postgresCanonical,refreshGolemSnapshot} from './core/store.mjs';
 import {cloudChat,cloudModels} from './core/cloud-client.mjs';
-import {bridgeStatus,memosStore,graphitiIngest} from './core/bridges.mjs';
+import {bridgeStatus,graphitiIngest} from './core/bridges.mjs';
 import {getCortex,queryCortex} from './core/golem-data.mjs';
 import {startGolemBrainAutomation,getGolemBuildStatus} from './core/golem-auto.mjs';
 import {cloudEmbedding} from './core/cloud-embedding.mjs';
@@ -75,7 +75,7 @@ const server=http.createServer(async(req,res)=>{
   if(req.method==='GET'&&p==='/api/models'){const s=await settings();return json(res,200,{models:await cloudModels(s)})}
   if(req.method==='POST'&&p==='/api/test-connection'){await body(req);const s=await settings();await cloudChat(s,[{role:'user',content:'Ответь одним словом: работает'}]);return json(res,200,{ok:true})}
   if(req.method==='GET'&&p==='/api/integrations/status')return json(res,200,bridgeStatus());
-  if(req.method==='GET'&&p==='/api/memory/status'){const m=await chatHistory();return json(res,200,{messages:m.length,mode:postgresCanonical()?'postgresql':'local',memosConnected:false})}
+  if(req.method==='GET'&&p==='/api/memory/status'){const m=await chatHistory();return json(res,200,{messages:m.length,mode:postgresCanonical()?'postgresql':'local'})}
   if(req.method==='GET'&&p==='/api/chats')return json(res,200,{messages:await chatHistory(100)});
   if(req.method==='GET'&&p==='/api/golem/knowledge')return json(res,200,await golemKnowledgePage({q:url.searchParams.get('q')||'',limit:url.searchParams.get('limit'),offset:url.searchParams.get('offset')}));
   if(req.method==='GET'&&p==='/api/golem/source'){const id=url.searchParams.get('id');if(!/^[1-9][0-9]{0,15}$/.test(id||''))return json(res,400,{error:'Некорректный ID факта'});const source=await golemFactSource(id);return json(res,source?200:404,source||{error:'Источник не найден'});}
@@ -107,8 +107,7 @@ const server=http.createServer(async(req,res)=>{
    if(postgresCanonical()&&process.env.AMAYORI_EMBEDDING_MODEL){
     void runEmbeddingBatch(config,process.env.AMAYORI_EMBEDDING_MODEL,{limit:2}).catch(error=>console.warn('Cloud.ru embedding indexing:',error.message));
    }
-   const results=await Promise.allSettled([memosStore(text,answer),graphitiIngest(text,answer)]);
-   for(const result of results)if(result.status==='rejected')console.warn('Optional bridge failed:',result.reason.message);
+   try{await graphitiIngest(text,answer)}catch(error){console.warn('Optional bridge failed:',error.message)}
    return json(res,200,{answer,model:selected,traceId,usedFactIds:memory.facts.map(f=>String(f.id)),memorySources:memory.sources});
   }
   if(req.method==='GET'&&(p==='/three.module.js'||p==='/three.core.js')){const content=await fs.readFile(path.join(root,'node_modules','three','build',p.slice(1)));res.writeHead(200,{'Content-Type':'text/javascript; charset=utf-8','Cache-Control':'public, max-age=3600','X-Content-Type-Options':'nosniff'});return res.end(content)}
