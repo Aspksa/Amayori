@@ -135,3 +135,22 @@ export async function feedbackStats(){
  const r=await db.query('SELECT rating,COUNT(*)::int AS count FROM amayori_feedback GROUP BY rating');
  return {positive:r.rows.find(x=>x.rating===1)?.count||0,negative:r.rows.find(x=>x.rating===-1)?.count||0};
 }
+
+export async function golemKnowledgePage({q='',limit=150,offset=0}={}){
+ const db=await ensureKnowledgeTables();if(!db)return {nodes:[],edges:[],total:0,source:'postgresql-unavailable'};
+ const size=Math.max(1,Math.min(300,Number(limit)||150)),skip=Math.max(0,Math.min(1000000,Number(offset)||0));
+ const term=String(q).slice(0,150);
+ const count=await db.query("SELECT COUNT(*)::int AS n FROM amayori_facts WHERE status='active' AND ($1='' OR subject ILIKE '%'||$1||'%' OR predicate ILIKE '%'||$1||'%' OR object ILIKE '%'||$1||'%')",[term]);
+ const result=await db.query("SELECT id,subject,predicate,object,source,confidence,created_at FROM amayori_facts WHERE status='active' AND ($1='' OR subject ILIKE '%'||$1||'%' OR predicate ILIKE '%'||$1||'%' OR object ILIKE '%'||$1||'%') ORDER BY id DESC LIMIT $2 OFFSET $3",[term,size,skip]);
+ const nodes=new Map(),edges=[];
+ for(const row of result.rows){
+  for(const name of [row.subject,row.object])if(!nodes.has(name))nodes.set(name,{id:name,label:name,category:'fact'});
+  edges.push({id:String(row.id),source:row.subject,target:row.object,label:row.predicate,sourceType:row.source,confidence:row.confidence,createdAt:row.created_at});
+ }
+ return {nodes:[...nodes.values()],edges,total:count.rows[0].n,offset:skip,limit:size,source:'postgresql'};
+}
+export async function golemVectorStatus(){
+ const db=await database();if(!db)return {enabled:false,indexed:0};
+ const r=await db.query('SELECT COUNT(*)::int AS n FROM amayori_memories WHERE embedding IS NOT NULL');
+ return {enabled:true,indexed:r.rows[0].n,dimensions:384};
+}

@@ -1,12 +1,17 @@
-const canvas=document.getElementById('knowledge-map');
-const ctx=canvas?.getContext('2d');
-let graph={nodes:[],edges:[]},points=[],drag=null,pan={x:0,y:0},zoom=1;
-function render(){if(!ctx)return;const w=canvas.width=canvas.clientWidth*devicePixelRatio,h=canvas.height=canvas.clientHeight*devicePixelRatio;ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);const cw=canvas.clientWidth,ch=canvas.clientHeight;ctx.clearRect(0,0,cw,ch);ctx.save();ctx.translate(cw/2+pan.x,ch/2+pan.y);ctx.scale(zoom,zoom);const map=new Map(points.map(p=>[p.id,p]));ctx.strokeStyle='#dec8bb';ctx.lineWidth=1;for(const e of graph.edges){const a=map.get(e.source),b=map.get(e.target);if(!a||!b)continue;ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke()}for(const p of points){ctx.beginPath();ctx.arc(p.x,p.y,Math.min(15,5+p.count),0,Math.PI*2);ctx.fillStyle='#a42b43';ctx.fill();ctx.fillStyle='#48373d';ctx.font='12px Segoe UI';ctx.fillText(p.label.slice(0,18),p.x+13,p.y+4)}ctx.restore()}
-async function load(){try{const r=await fetch('/api/graph');if(!r.ok)return;graph=await r.json();const count=graph.nodes.length;points=graph.nodes.slice(0,250).map((n,i)=>{const a=i*2.3999632297,rad=24*Math.sqrt(i);return {...n,x:Math.cos(a)*rad,y:Math.sin(a)*rad}});render()}catch{}}
-function coords(e){const r=canvas.getBoundingClientRect();return{x:(e.clientX-r.left-r.width/2-pan.x)/zoom,y:(e.clientY-r.top-r.height/2-pan.y)/zoom}}
-canvas?.addEventListener('pointerdown',e=>{const p=coords(e);drag={x:e.clientX,y:e.clientY,panX:pan.x,panY:pan.y,node:points.find(n=>Math.hypot(n.x-p.x,n.y-p.y)<16)};canvas.setPointerCapture(e.pointerId)});
-canvas?.addEventListener('pointermove',e=>{if(!drag)return;if(drag.node){const p=coords(e);drag.node.x=p.x;drag.node.y=p.y}else{pan.x=drag.panX+e.clientX-drag.x;pan.y=drag.panY+e.clientY-drag.y}render()});
-canvas?.addEventListener('pointerup',()=>drag=null);canvas?.addEventListener('pointercancel',()=>drag=null);
-canvas?.addEventListener('wheel',e=>{e.preventDefault();zoom=Math.max(.25,Math.min(3,zoom*(e.deltaY>0?.9:1.1)));render()},{passive:false});
-document.getElementById('graph-reset')?.addEventListener('click',()=>{zoom=1;pan={x:0,y:0};load()});
-addEventListener('resize',render);document.addEventListener('amayori-chat-updated',load);load();
+const canvas=document.getElementById('knowledge-map'),ctx=canvas?.getContext('2d');
+let graph={nodes:[],edges:[]},points=[],pan={x:0,y:0},zoom=1,drag=null,offset=0,total=0,filter='';
+const $=id=>document.getElementById(id);
+const safeText=(id,text)=>{const el=$(id);if(el)el.textContent=text};
+function layout(nodes){return nodes.map((n,i)=>{const a=i*2.399963229728653,r=18*Math.sqrt(i);return {...n,x:Math.cos(a)*r,y:Math.sin(a)*r}})}
+function draw(){if(!ctx)return;const ratio=Math.min(devicePixelRatio||1,2),w=canvas.clientWidth,h=canvas.clientHeight;canvas.width=Math.round(w*ratio);canvas.height=Math.round(h*ratio);ctx.setTransform(ratio,0,0,ratio,0,0);ctx.clearRect(0,0,w,h);ctx.save();ctx.translate(w/2+pan.x,h/2+pan.y);ctx.scale(zoom,zoom);const lookup=new Map(points.map(p=>[p.id,p]));ctx.strokeStyle='#c9a985';ctx.lineWidth=1;for(const edge of graph.edges){const a=lookup.get(edge.source),b=lookup.get(edge.target);if(!a||!b)continue;ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke()}for(const p of points){ctx.beginPath();ctx.arc(p.x,p.y,6,0,Math.PI*2);ctx.fillStyle='#a42b43';ctx.fill();if(zoom>.55){ctx.font='12px Segoe UI';ctx.fillStyle='#493536';ctx.fillText(String(p.label).slice(0,22),p.x+10,p.y+4)}}ctx.restore()}
+async function load(reset=false){try{if(reset){offset=0;graph={nodes:[],edges:[]}}const query=new URLSearchParams({q:filter,offset:String(offset),limit:'150'});const r=await fetch('/api/golem/knowledge?'+query);if(!r.ok)throw Error('HTTP '+r.status);const data=await r.json();total=data.total||0;const nodes=new Map(graph.nodes.map(n=>[n.id,n]));for(const n of data.nodes)nodes.set(n.id,n);graph.nodes=[...nodes.values()];graph.edges.push(...data.edges);offset+=data.edges.length;points=layout(graph.nodes);draw();safeText('graph-count',graph.nodes.length+' узлов · '+graph.edges.length+' связей · всего фактов: '+total);safeText('golem-diagnostics',data.source==='postgresql'?'PostgreSQL · загружено '+offset+' из '+total:'Для графа фактов подключите PostgreSQL');$('golem-more').disabled=offset>=total}catch(e){safeText('golem-diagnostics','Ошибка Golem: '+e.message)}}
+function coords(e){const r=canvas.getBoundingClientRect();return {x:(e.clientX-r.left-r.width/2-pan.x)/zoom,y:(e.clientY-r.top-r.height/2-pan.y)/zoom}}
+canvas?.addEventListener('pointerdown',e=>{const p=coords(e);drag={x:e.clientX,y:e.clientY,panX:pan.x,panY:pan.y,moved:false,node:points.find(n=>Math.hypot(n.x-p.x,n.y-p.y)<12)};canvas.setPointerCapture(e.pointerId)});
+canvas?.addEventListener('pointermove',e=>{if(!drag)return;const dx=e.clientX-drag.x,dy=e.clientY-drag.y;if(Math.hypot(dx,dy)>5)drag.moved=true;if(drag.node){const p=coords(e);if(drag.moved){drag.node.x=p.x;drag.node.y=p.y}}else{pan.x=drag.panX+dx;pan.y=drag.panY+dy}draw()});
+canvas?.addEventListener('pointerup',()=>{if(drag?.node&&!drag.moved){const edges=graph.edges.filter(e=>e.source===drag.node.id||e.target===drag.node.id);safeText('golem-selected',drag.node.label+' · связей: '+edges.length+' · '+edges.slice(0,3).map(e=>e.label).join(', '))}drag=null});
+canvas?.addEventListener('pointercancel',()=>drag=null);
+canvas?.addEventListener('wheel',e=>{e.preventDefault();zoom=Math.max(.2,Math.min(4,zoom*(e.deltaY>0?.9:1.1)));draw()},{passive:false});
+$('graph-reset')?.addEventListener('click',()=>{zoom=1;pan={x:0,y:0};filter='';$('golem-search').value='';load(true)});
+$('golem-search-button')?.addEventListener('click',()=>{filter=$('golem-search').value.trim();load(true)});
+$('golem-more')?.addEventListener('click',()=>load());
+addEventListener('resize',draw);document.addEventListener('amayori-chat-updated',()=>load(true));load(true);

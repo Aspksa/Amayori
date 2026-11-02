@@ -7,7 +7,7 @@ import {cloudChat,cloudModels,validateEndpoint} from './core/cloud-client.mjs';
 import {bridgeStatus,memosSearch,memosStore,graphitiIngest} from './core/bridges.mjs';
 import {getCortex,queryCortex} from './core/golem-data.mjs';
 import {startGolemBrainAutomation,getGolemBuildStatus} from './core/golem-auto.mjs';
-import {initDatabase,databaseStatus,saveFact,findFacts,knowledgeGraph,saveFeedback,feedbackStats} from './core/postgres.mjs';
+import {initDatabase,databaseStatus,saveFact,findFacts,knowledgeGraph,saveFeedback,feedbackStats,golemKnowledgePage,golemVectorStatus} from './core/postgres.mjs';
 const root=path.dirname(fileURLToPath(import.meta.url));
 const host='127.0.0.1',port=Number(process.env.PORT||57474);
 const routes={'/':'index.html','/index.html':'index.html','/style.css':'style.css','/chat-avatar.js':'chat-avatar.js','/app.js':'app.js','/knowledge-map.js':'knowledge-map.js'};
@@ -65,6 +65,8 @@ const server=http.createServer(async(req,res)=>{
   if(req.method==='GET'&&p==='/api/integrations/status')return json(res,200,bridgeStatus());
   if(req.method==='GET'&&p==='/api/memory/status'){const m=await chatHistory();return json(res,200,{messages:m.length,mode:postgresCanonical()?'postgresql':'local',memosConnected:false})}
   if(req.method==='GET'&&p==='/api/chats')return json(res,200,{messages:await chatHistory(100)});
+  if(req.method==='GET'&&p==='/api/golem/knowledge')return json(res,200,await golemKnowledgePage({q:url.searchParams.get('q')||'',limit:url.searchParams.get('limit'),offset:url.searchParams.get('offset')}));
+  if(req.method==='GET'&&p==='/api/golem/diagnostics'){const started=Date.now();const [graph,vector]=await Promise.all([golemKnowledgePage({limit:1}),golemVectorStatus()]);return json(res,200,{source:graph.source,facts:graph.total,vector,queryMs:Date.now()-started,localModel:false})}
   if(req.method==='GET'&&p==='/api/golem/build-status')return json(res,200,getGolemBuildStatus());
   if(req.method==='GET'&&p==='/api/golem/cortex'){const graph=await read('graph.json',{nodes:[],edges:[]});return json(res,200,await getCortex(graph))}
   if(req.method==='POST'&&p==='/api/golem/query'){const b=await body(req);if(typeof b.query!=='string'||b.query.length>500)return json(res,400,{error:'Некорректный запрос'});const cortex=await getCortex(await read('graph.json',{nodes:[],edges:[]}));return json(res,200,await queryCortex(cortex.nodes,b.query))}
@@ -76,4 +78,4 @@ const server=http.createServer(async(req,res)=>{
   res.writeHead(200,{'Content-Type':types[path.extname(name)],'X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; object-src 'none'; frame-ancestors 'none'"});res.end(content);
  }catch(e){console.error(e);json(res,e instanceof SyntaxError?400:500,{error:e instanceof SyntaxError?'Неверный JSON':(e.message||'Ошибка сервера')})}
 });
-server.listen(port,host,()=>{console.log('Amayori ready: http://'+host+':'+port+'/');startGolemBrainAutomation();void initDatabase().then(async()=>{if(postgresCanonical()){await chatHistory(1);await refreshGolemSnapshot()}}).catch(e=>console.warn('PostgreSQL initialization/migration check:',e.message))});
+server.listen(port,host,()=>{console.log('Amayori ready: http://'+host+':'+port+'/');void initDatabase().then(async()=>{if(postgresCanonical()){await chatHistory(1);await refreshGolemSnapshot()}}).catch(e=>console.warn('PostgreSQL initialization/migration check:',e.message))});
