@@ -27,5 +27,7 @@ export async function extractKnowledge(
       facts.push(cleanFact(value));
     } catch {}
   }
+  if (parsed.facts.length && !facts.length)
+    throw Error("Cloud.ru вернул некорректные карточки знаний");
   return facts;
 }

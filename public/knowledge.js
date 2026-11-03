@@ -311,7 +311,10 @@
             fact.conflicts.map((f) => versionRow(f)),
           ),
         );
-      if (fact.duplicates?.length)
+      if (
+        fact.duplicates?.length &&
+        ["active", "candidate"].includes(fact.status)
+      )
         target.append(
           section(
             "Похожие карточки — проверьте смысл",

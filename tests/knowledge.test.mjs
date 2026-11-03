@@ -78,6 +78,11 @@ test("a contradictory single-valued claim requires an explicit choice and preser
   assert.equal((await repo.detail(first.id)).status, "superseded");
   assert.equal((await repo.detail(second.id)).history[0].id, first.id);
   assert.equal((await repo.find("Amayori"))[0].object, "Белая");
+  await assert.rejects(
+    () => repo.merge(first.id, second.id),
+    /Историческую версию/,
+  );
+  assert.equal((await repo.find("Amayori"))[0].id, second.id);
   await repo.choose(first.id);
   assert.equal((await repo.detail(first.id)).sources[0].messageId, "old");
   assert.equal((await repo.detail(second.id)).superseded_by, first.id);
@@ -226,6 +231,13 @@ test("extractor bounds model output, validates structured facts and keeps the us
     },
   });
   assert.equal(facts.length, 3);
+  await assert.rejects(
+    () =>
+      extractKnowledge({}, "test", {
+        chat: async () => JSON.stringify({ facts: [{ subject: "invalid" }] }),
+      }),
+    /некорректные карточки/,
+  );
   await assert.rejects(
     () => extractKnowledge({}, "test", { chat: async () => "bad JSON" }),
     /некорректный JSON/,

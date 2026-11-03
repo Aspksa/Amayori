@@ -209,10 +209,10 @@ export function mergeFacts(facts, targetId, duplicateId, now) {
   if (
     target === duplicate ||
     slot(target) !== slot(duplicate) ||
-    [target, duplicate].some((f) => ["merged", "rejected"].includes(f.status))
+    [target, duplicate].some((f) => !["active", "candidate"].includes(f.status))
   )
     throw invalid(
-      "Для объединения выберите две карточки одной сущности и отношения",
+      "Для объединения выберите актуальные карточки или кандидаты одной сущности и отношения. Историческую версию сначала сделайте актуальной.",
     );
   addSources(target, duplicate.sources);
   if (target.status === "candidate" && duplicate.status === "active")
