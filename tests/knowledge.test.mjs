@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createKnowledgeRepository } from "../core/knowledge-repository.mjs";
 import { createExtractionService } from "../core/knowledge-extraction.mjs";
 import { extractKnowledge } from "../core/knowledge-extractor.mjs";
-import { hydrate } from "../core/knowledge-model.mjs";
+import { hydrate, graphPage } from "../core/knowledge-model.mjs";
 
 const input = {
   subject: "Amayori",
@@ -135,6 +135,19 @@ test("multi-valued relationships stay additive and related cards expose the shar
   );
   const graph = await repo.graph();
   assert.equal(graph.edges.length, 3);
+  const large = Array.from({ length: 350 }, (_, i) => ({
+    ...input,
+    id: String(i + 1),
+    object: "Узел " + i,
+    status: "active",
+    topics: ["Дизайн"],
+    updated_at: "2026-11-03",
+  }));
+  assert.equal(
+    graphPage(large, { limit: 300 }).edges.length,
+    300,
+    "Golem retains its 300-fact page contract",
+  );
   assert.equal(graph.nodes.filter((n) => n.id === "amayori").length, 1);
   assert.equal((await repo.list({ kind: "person", topic: "Дизайн" })).total, 2);
 });

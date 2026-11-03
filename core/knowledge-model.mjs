@@ -301,6 +301,7 @@ export function listFacts(
     offset = 0,
     limit = 30,
   } = {},
+  maximum = 100,
 ) {
   const statuses = ["active", "candidate", "superseded", "all"];
   if (!statuses.includes(status) || (kind && !kinds.includes(kind)))
@@ -327,7 +328,7 @@ export function listFacts(
         Number(b.id) - Number(a.id),
     );
   const skip = Math.max(0, Math.min(1000000, Math.floor(Number(offset) || 0))),
-    size = Math.max(1, Math.min(100, Math.floor(Number(limit) || 30)));
+    size = Math.max(1, Math.min(maximum, Math.floor(Number(limit) || 30)));
   return {
     facts: filtered.slice(skip, skip + size),
     total: filtered.length,
@@ -344,11 +345,15 @@ export function listFacts(
   };
 }
 export function graphPage(facts, options = {}) {
-  const page = listFacts(facts, {
-    ...options,
-    status: "active",
-    limit: options.limit || 100,
-  });
+  const page = listFacts(
+    facts,
+    {
+      ...options,
+      status: "active",
+      limit: options.limit || 100,
+    },
+    300,
+  );
   const nodes = new Map(),
     edges = [];
   for (const f of page.facts) {
