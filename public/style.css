@@ -3999,4 +3999,5 @@ html[data-motion="false"] *:after {
 .archive-item{position:relative}.archive-forget{position:absolute;right:38px;top:50%;transform:translateY(-50%);opacity:0;transition:opacity .15s}.archive-item:hover .archive-forget,.archive-item:focus-within .archive-forget{opacity:1}.archive-forget.armed{opacity:1;width:auto;padding:0 10px;font-size:12px;color:#e8b0a0;border-color:#6d3a30}.archive-more{width:100%;margin-bottom:8px}
 .conversation-control{max-width:42%}.conversation-control select{max-width:100%}
 
-.conversation-message{position:relative;padding-right:48px}.conversation-message>.archive-forget{position:absolute;right:8px;top:8px}.conversation-message>.archive-forget.armed{width:auto;background:var(--surface,#202024)}
+.conversation-message{position:relative;padding-right:48px}.conversation-message>.archive-forget{position:absolute;right:8px;top:8px;transform:none}.conversation-message:hover>.archive-forget,.conversation-message:focus-within>.archive-forget{opacity:1}.conversation-message>.archive-forget.armed{width:auto;background:var(--surface,#202024)}
+@media (pointer:coarse){.conversation-message>.archive-forget{opacity:1}}
