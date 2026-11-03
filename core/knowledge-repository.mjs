@@ -12,6 +12,7 @@ import {
   invalid,
   slot,
   consolidateFacts,
+  forgetFacts,
 } from "./knowledge-model.mjs";
 
 // One canonical backend: local JSON without PostgreSQL; the existing facts table
@@ -64,7 +65,8 @@ export function createKnowledgeRepository({
         "SELECT id,subject,predicate,object,source,source_message_id,status,superseded_by,created_at,knowledge_meta FROM amayori_facts ORDER BY id FOR UPDATE",
       );
       const facts = rows.rows.map(hydrate),
-        before = new Map(facts.map((f) => [f.id, JSON.stringify(f)]));
+        before = new Map(facts.map((f) => [f.id, JSON.stringify(f)])),
+        beforeIds = new Set(facts.map((f) => String(f.id)));
       if (!importing && !facts.length && (await local()).length)
         throw Error(
           "Локальные знания требуют переноса: npm.cmd run migrate:knowledge",
@@ -121,6 +123,13 @@ export function createKnowledgeRepository({
           ],
         );
       }
+      const left = new Set(facts.map((f) => String(f.id)));
+      const gone = [...beforeIds].filter((id) => !left.has(id));
+      if (gone.length)
+        await client.query(
+          "DELETE FROM amayori_facts WHERE id = ANY($1::bigint[])",
+          [gone],
+        );
       if (importing)
         await client.query(
           "SELECT setval(pg_get_serial_sequence('amayori_facts','id'),GREATEST(COALESCE((SELECT MAX(id) FROM amayori_facts),0),1),EXISTS(SELECT 1 FROM amayori_facts))",
@@ -191,6 +200,9 @@ export function createKnowledgeRepository({
           }),
         inputs.length,
       );
+    },
+    async forget({ids = [], messages = []} = {}) {
+      return mutate((facts) => forgetFacts(facts, {ids, messages}));
     },
     async list(options = {}) {
       return {

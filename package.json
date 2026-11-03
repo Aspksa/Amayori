@@ -1,6 +1,6 @@
 {
   "name": "amayori",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -11,7 +11,8 @@
     "test:syntax": "node scripts/check-syntax.mjs",
     "tour": "node scripts/interface-tour.mjs",
     "test:ui": "node scripts/verify-interface.mjs",
-    "migrate:knowledge": "node scripts/migrate-knowledge.mjs"
+    "migrate:knowledge": "node scripts/migrate-knowledge.mjs",
+    "backup": "node scripts/backup.mjs"
   },
   "dependencies": {
     "pg": "^8.13.1",

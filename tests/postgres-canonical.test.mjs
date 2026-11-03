@@ -8,7 +8,7 @@ test('PostgreSQL canonical mode and migration are explicit',async()=>{
  assert.match(store,/loadCanonicalChats/);
  assert.match(store,/appendCanonicalExchange/);
  assert.match(store,/require migration/);
- assert.match(server,/chatHistory\(12\)/);
+ assert.match(server,/chatHistory\(\{limit:12/,'контекст ответа остаётся ограниченным 12 сообщениями');
  assert.equal(pkg.scripts['migrate:postgres'],'node scripts/migrate-postgres.mjs');
 });
 test('a recorded exchange does not re-read the whole archive',async()=>{

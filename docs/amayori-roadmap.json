@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0.0",
   "project": "Aspksa/Amayori",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "updated_at": "2026-11-03",
   "language": "ru",
   "objective": "Единый развивающийся ИИ-мозг: Cloud.ru сейчас, проверяемое дообучение позже",
@@ -39,7 +39,8 @@
     {"id": "interface-0-6", "status": "merged", "prs": [46], "description": "Чёрно-золотой интерфейс, отдельные разделы, большой чат и браузерные проверки"},
     {"id": "golem-galaxy", "status": "merged", "prs": [50, 51, 52], "description": "Голем стал галактикой: свет и объём, канал событий и стриминг, звёзды с планетами и собственные созвездия"},
     {"id": "workspace-0-10", "status": "merged", "prs": [53], "description": "Чат рядом с картой или архивом, изменяемые пропорции и личное левое меню"},
-    {"id": "knowledge-0-11", "status": "merged", "prs": [54], "description": "Карточки знаний с источниками и историей, объединение повторов, авторазбор сообщений и перенос в базу"}
+    {"id": "knowledge-0-11", "status": "merged", "prs": [54], "description": "Карточки знаний с источниками и историей, объединение повторов, авторазбор сообщений и перенос в базу"},
+    {"id": "forgetting-and-conversations", "status": "merged", "description": "Удаление сообщений, диалогов и знаний; отдельные диалоги; страничный архив с поиском на сервере; резервная копия вместе с PostgreSQL; pgvector в CI и аудит зависимостей"}
   ],
   "pending_pull_requests": [],
   "roadmap": [
@@ -105,9 +106,9 @@
   ],
   "verification": {
     "note": "Статус заполняется по результатам запусков, а не по обещаниям",
-    "unit_tests": "npm test — 44 из 44 проходят после npm ci",
+    "unit_tests": "npm test — 71 из 71 после npm ci; два теста с базой идут только там, где она поднята",
     "syntax": "npm run test:syntax — 47 модулей; список файлов больше не задаётся вручную",
-    "browser_tests": "npm run test:ui требует Chromium; запускается отдельно",
+    "browser_tests": "npm run test:ui — 20 проверок, требует Chromium",
     "not_verified": [
       "Полный прогон на Windows",
       "Реальные запросы Cloud.ru",

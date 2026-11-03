@@ -77,24 +77,28 @@ try {
     "Empty local mode has one chat, a connection hint and no embedded Golem",
   );
 
-  const messages = [
+  let messages = [
     {
+      id: "m1",
       role: "user",
       content: "Помоги продумать сад.",
       at: "2026-11-02T01:00:00Z",
     },
     {
+      id: "m2",
       role: "assistant",
       content:
         'Начнём с **плана** и дорожек.\n\nПример: `garden`.\n```js\nconst garden = "тихое место";\n```',
       at: "2026-11-02T01:00:01Z",
     },
     {
+      id: "m3",
       role: "user",
       content: '<img src=x onerror="window.injected=true">',
       at: "2026-11-02T02:00:00Z",
     },
     {
+      id: "m4",
       role: "assistant",
       content: "Это текст, который должен остаться текстом.",
       at: "2026-11-02T02:00:01Z",
@@ -132,6 +136,16 @@ try {
     calls = 0,
     semanticScenario = false,
     semanticMode = "matches";
+  let conversations = [
+    {
+      id: "c1",
+      title: "Общий диалог",
+      messages: 4,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    },
+  ];
+  const deleted = [];
   const mockRoute = async (route) => {
     const url = new URL(route.request().url()),
       p = url.pathname,
@@ -154,7 +168,44 @@ try {
           { id: "second-model", name: "Другая модель", type: "llm" },
         ],
       };
-    else if (p === "/api/chats") data = { messages };
+    else if (p === "/api/chats") {
+      if (method === "DELETE") {
+        const id = url.searchParams.get("id");
+        deleted.push(id);
+        const before = messages.length;
+        messages = messages.filter((message) => String(message.id) !== String(id));
+        data = { ok: true, messages: before - messages.length, facts: 1 };
+      } else {
+        const query = (url.searchParams.get("q") || "").toLocaleLowerCase("ru");
+        const scope = url.searchParams.get("conversation");
+        let found = messages.filter(
+          (message) =>
+            (!query || message.content.toLocaleLowerCase("ru").includes(query)) &&
+            (!scope || String(message.conversation || conversations[0].id) === String(scope)),
+        );
+        const limit = Math.max(1, Number(url.searchParams.get("limit")) || 100);
+        const offset = Math.max(0, Number(url.searchParams.get("offset")) || 0);
+        const end = Math.max(0, found.length - offset);
+        data = {
+          messages: found.slice(Math.max(0, end - limit), end),
+          total: found.length,
+          limit,
+          offset,
+        };
+      }
+    } else if (p === "/api/conversations") {
+      if (method === "POST") {
+        const made = {
+          id: "c" + (conversations.length + 1),
+          title: "Новый диалог",
+          messages: 0,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        conversations = [made, ...conversations];
+        data = made;
+      } else data = { conversations };
+    }
     else if (p === "/api/memory/status")
       data = {
         messages: messages.length,
@@ -228,8 +279,14 @@ try {
       const body = route.request().postDataJSON();
       await delay(150);
       messages.push(
-        { role: "user", content: body.message, at: new Date().toISOString() },
         {
+          id: "m" + (messages.length + 1),
+          role: "user",
+          content: body.message,
+          at: new Date().toISOString(),
+        },
+        {
+          id: "m" + (messages.length + 2),
           role: "assistant",
           content: "Готово. **План** сохранён в разговоре.",
           at: new Date().toISOString(),
@@ -329,8 +386,31 @@ try {
   await page.keyboard.press("Escape");
   assert.equal(await page.locator("#floating-chat").isVisible(), false);
   await page.locator("#archive-search").fill("сад");
-  assert.ok((await page.locator("#archive-list mark").count()) > 0);
+  // Search is debounced and answered by the server now.
+  await page.waitForFunction(
+    () => document.querySelectorAll("#archive-list mark").length > 0,
+  );
   await page.locator("#archive-search").fill("");
+  await page.waitForFunction(
+    () => document.querySelectorAll("#archive-list mark").length === 0,
+  );
+  // Conversations, paging and forgetting: the archive used to stop at a hundred
+  // messages and nothing could ever be deleted.
+  const beforeForget = await page.locator("#archive-list .archive-item").count();
+  assert.ok(beforeForget > 0, "архив показывает сообщения");
+  const forget = page.locator("#archive-list .archive-item .archive-forget").first();
+  await forget.click();
+  await page.waitForFunction(
+    () => /Удалить\?/.test(document.querySelector("#archive-list .archive-forget")?.textContent || ""),
+  );
+  await forget.click();
+  await page.waitForFunction(
+    (count) => document.querySelectorAll("#archive-list .archive-item").length === count - 1,
+    beforeForget,
+  );
+  assert.equal(deleted.length, 1, "удаление ушло на сервер");
+  assert.ok(deleted[0] && deleted[0] !== "undefined", "сервер получил идентификатор сообщения");
+  checks.push("Архив ищет на сервере, листается и умеет забывать сообщение");
   const archiveText = await page
     .locator("#archive-list")
     .evaluate((list) => list.textContent);
@@ -633,11 +713,14 @@ try {
   await page.locator("#chat-export").click();
   assert.match((await download).suggestedFilename(), /^Amayori-/);
   await page.locator("#chat-more").click();
+  // Relative to whatever the archive holds now: an earlier check deletes one
+  // message on purpose, and clearing the screen must still change nothing.
+  const archivedBefore = messages.length;
   await page.locator("#chat-clear-view").click();
   assert.equal(await page.locator(".message").count(), 0);
   assert.equal(
     messages.length,
-    6,
+    archivedBefore,
     "clearing the screen does not delete the archive",
   );
   checks.push(
@@ -653,8 +736,10 @@ try {
   phone.on("pageerror", (error) => errors.push(error.message));
   await phone.route("**/api/**", mockRoute);
   await phone.goto(base);
+  // Counted from the archive, not hard-coded: an earlier check deletes one.
   await phone.waitForFunction(
-    () => document.querySelectorAll(".message").length === 6,
+    (count) => document.querySelectorAll(".message").length === count,
+    messages.length,
   );
   assert.equal(
     await phone.evaluate(() => matchMedia("(pointer: coarse)").matches),
@@ -664,11 +749,13 @@ try {
   await phone.keyboard.press("Enter");
   assert.equal(calls, 1, "mobile Enter inserts a newline instead of sending");
   assert.ok((await phone.locator("#chat-input").inputValue()).endsWith("\n"));
+  const phoneBefore = messages.length;
   await phone.locator("#chat-send").tap();
   await phone.waitForFunction(
-    () =>
-      document.querySelectorAll(".message").length === 8 &&
+    (count) =>
+      document.querySelectorAll(".message").length === count &&
       !document.querySelector(".message.pending"),
+    phoneBefore + 2,
   );
   assert.equal(calls, 2);
   await phone.locator('a.nav-link[data-page="memory"]').tap();
