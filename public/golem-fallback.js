@@ -6,6 +6,14 @@ const notice = document.getElementById('notice');
 const brain = document.getElementById('brain');
 let graph = {nodes: [], edges: []};
 let angle = 0, active = true, previous = 0;
+let loading = false, lastUpdated = 0;
+const status = document.createElement('span');
+status.id = 'golem-data-status';
+status.setAttribute('role', 'status');
+status.style.cssText = 'position:fixed;bottom:12px;left:12px;z-index:20;color:#d9bf8d;background:rgba(5,6,10,.82);padding:7px 11px;border-radius:8px;font:12px system-ui;pointer-events:none';
+document.getElementById('universe').append(status);
+function showStatus(message) { status.textContent = message; }
+showStatus('Загрузка памяти… · R — обновить');
 let preferences = normalizeGolemSettings();
 const state = createRenderState({onChange(ready, reason) {
   active = !ready;
@@ -56,6 +64,8 @@ function draw(now) {
   if (preferences.autoRotate && !matchMedia('(prefers-reduced-motion: reduce)').matches) angle += elapsed * .000084;
 }
 async function refresh() {
+  if (loading) return;
+  loading = true;
   try {
     const r = await fetch('/api/golem/knowledge?limit=300', {cache: 'no-store'});
     if (!r.ok) throw Error('HTTP ' + r.status);
@@ -65,9 +75,12 @@ async function refresh() {
       if (response.ok) { const local = await response.json(); if (local.nodes?.length) data = local; }
     }
     graph = {nodes: data.nodes || [], edges: data.edges || []};
+    lastUpdated = Date.now();
+    showStatus(`${graph.nodes.length} узлов · ${graph.edges.length} связей · R — обновить`);
   } catch (error) {
-    if (active) notice.textContent = 'Данные недоступны: ' + error.message + ' · показана демонстрационная сеть';
-  }
+    if (active) notice.textContent = 'Данные недоступны: ' + error.message + (lastUpdated ? ' · сохранена последняя карта' : ' · показана демонстрационная сеть');
+    showStatus('Ошибка обновления · R — повторить');
+  } finally { loading = false; }
 }
 async function refreshSettings() {
   try {
@@ -89,3 +102,11 @@ document.addEventListener('visibilitychange', () => {
   if (!document.hidden) { state.fail('Возобновление 3D…'); void refreshSettings(); }
 });
 addEventListener('resize', resize);
+
+// Refresh the underlying graph without reloading the WebGL scene.
+document.addEventListener('keydown', event => {
+  if (event.key.toLowerCase() !== 'r' || event.altKey || event.ctrlKey || event.metaKey || event.repeat) return;
+  const target = event.target;
+  if (target instanceof HTMLElement && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))) return;
+  void refresh();
+});
