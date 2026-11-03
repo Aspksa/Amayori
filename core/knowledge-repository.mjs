@@ -227,9 +227,18 @@ export function createKnowledgeRepository({
         result = [];
       for (const fact of facts) {
         if (fact.status === "candidate") {
-          for (const old of facts.filter(
+          const current = facts.filter(
             (f) => f.status === "active" && slot(f) === slot(fact),
-          ))
+          );
+          const alternatives = current.length
+            ? current
+            : facts.filter(
+                (f) =>
+                  f.status === "candidate" &&
+                  slot(f) === slot(fact) &&
+                  f.id < fact.id,
+              );
+          for (const old of alternatives)
             result.push({
               id: old.id,
               subject: fact.subject,

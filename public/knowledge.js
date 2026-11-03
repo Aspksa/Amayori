@@ -251,7 +251,11 @@
           "small-text muted",
         ),
       );
-      if (fact.status === "candidate" || fact.status === "superseded") {
+      if (
+        fact.status === "candidate" ||
+        fact.status === "superseded" ||
+        fact.conflicts?.length
+      ) {
         target.append(
           text(
             "p",

@@ -151,6 +151,35 @@ test("multi-valued relationships stay additive and related cards expose the shar
   assert.equal(graph.nodes.filter((n) => n.id === "amayori").length, 1);
   assert.equal((await repo.list({ kind: "person", topic: "Дизайн" })).total, 2);
 });
+test("upgrading an existing additive property to exclusive exposes all competing values for explicit choice", async () => {
+  const { repo } = fixture();
+  const city = {
+    subject: "Пользователь",
+    predicate: "город",
+    object: "Москва",
+    exclusive: false,
+  };
+  const [moscow] = await repo.save([city]);
+  const [kazan] = await repo.save([{ ...city, object: "Казань" }]);
+  const [upgraded] = await repo.save([{ ...city, exclusive: true }]);
+  assert.equal(upgraded.id, moscow.id);
+  assert.equal(upgraded.status, "candidate");
+  assert.equal((await repo.list({ status: "candidate" })).total, 2);
+  assert.equal(
+    (await repo.find("город")).length,
+    0,
+    "ambiguous single-valued claims do not both enter chat context",
+  );
+  assert.equal((await repo.conflicts()).length, 1);
+  assert.equal((await repo.detail(kazan.id)).conflicts[0].id, moscow.id);
+  const [third] = await repo.save([
+    { ...city, object: "Артём", exclusive: true },
+  ]);
+  assert.equal(third.status, "candidate");
+  await repo.choose(kazan.id);
+  assert.equal((await repo.find("город"))[0].object, "Казань");
+  assert.equal((await repo.list({ status: "superseded" })).total, 2);
+});
 test("similar values are suggested for review and explicit merging retains aliases and original cards", async () => {
   const { repo } = fixture();
   const [a] = await repo.save(

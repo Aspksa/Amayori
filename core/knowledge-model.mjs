@@ -130,6 +130,18 @@ export function upsertFacts(facts, inputs, { source, now, allocateId }) {
       }
       if (same.kind === "general") same.kind = input.kind;
       same.exclusive ||= input.exclusive;
+      if (input.exclusive && same.status === "active") {
+        const active = facts.filter(
+          (f) => slot(f) === slot(same) && f.status === "active",
+        );
+        if (active.length > 1)
+          for (const fact of active) {
+            fact.status = "candidate";
+            fact.exclusive = true;
+            fact.updated_at = now;
+            fact.events.push({ type: "exclusive-conflict", at: now });
+          }
+      }
       same.updated_at = now;
       results.push({
         id: same.id,
@@ -140,8 +152,20 @@ export function upsertFacts(facts, inputs, { source, now, allocateId }) {
       continue;
     }
     const peers = facts.filter(
-      (f) => slot(f) === slot(input) && f.status === "active",
+      (f) =>
+        slot(f) === slot(input) && ["active", "candidate"].includes(f.status),
     );
+    if (
+      input.exclusive &&
+      peers.filter((f) => f.status === "active").length > 1
+    ) {
+      for (const fact of peers.filter((f) => f.status === "active")) {
+        fact.status = "candidate";
+        fact.exclusive = true;
+        fact.updated_at = now;
+        fact.events.push({ type: "exclusive-conflict", at: now });
+      }
+    }
     const competing = peers.filter((f) => input.exclusive || f.exclusive);
     const fact = {
       ...input,
