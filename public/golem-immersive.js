@@ -94,9 +94,10 @@ const haze = sprite([[0, 'rgba(255,214,150,.16)'], [0.55, 'rgba(188,150,112,.05)
 
 const pointShader = () => new THREE.ShaderMaterial({
   uniforms: {map: {value: glare}, uScale: {value: 1}, uTime: {value: 0}, uActivity: {value: 0}},
-  vertexShader: 'attribute float size; attribute vec3 tone; attribute float phase; varying vec3 vTone; uniform float uScale; uniform float uTime; uniform float uActivity;' +
+  vertexShader: 'attribute float size; attribute vec3 tone; attribute float phase; attribute float birthTime; varying vec3 vTone; uniform float uScale; uniform float uTime; uniform float uActivity;' +
     'void main(){ float breath = 1.0 + 0.11 * sin(uTime * (0.65 + phase * 0.7) + phase * 6.28318);' +
-    'float pulse = breath + uActivity * 0.18; vTone = tone * (0.93 + 0.07 * breath);' +
+    'float age = uTime - birthTime; float newborn = birthTime >= 0.0 ? exp(-max(0.0, age) * 0.85) : 0.0;' +
+    'float pulse = breath + uActivity * 0.18 + newborn * 1.4; vTone = tone * (0.93 + 0.07 * breath + newborn * 0.9);' +
     'vec4 mv = modelViewMatrix * vec4(position,1.0);' +
     'gl_PointSize = min(100.0, size * uScale * pulse * (330.0 / max(1.0, -mv.z))); gl_Position = projectionMatrix * mv; }',
   fragmentShader: 'uniform sampler2D map; varying vec3 vTone;' +
@@ -122,12 +123,14 @@ const glowPos = new Float32Array(MAX_STARS * 3);
 const glowSize = new Float32Array(MAX_STARS);
 const glowTone = new Float32Array(MAX_STARS * 3);
 const glowPhase = new Float32Array(MAX_STARS);
+const glowBirth = new Float32Array(MAX_STARS).fill(-1);
 for (let i = 0; i < MAX_STARS; i++) glowPhase[i] = hashStarPhase(i);
 function hashStarPhase(i) { return ((Math.imul(i + 1, 2654435761) >>> 0) / 4294967296); }
 glowGeometry.setAttribute('position', new THREE.BufferAttribute(glowPos, 3).setUsage(THREE.DynamicDrawUsage));
 glowGeometry.setAttribute('size', new THREE.BufferAttribute(glowSize, 1).setUsage(THREE.DynamicDrawUsage));
 glowGeometry.setAttribute('tone', new THREE.BufferAttribute(glowTone, 3).setUsage(THREE.DynamicDrawUsage));
 glowGeometry.setAttribute('phase', new THREE.BufferAttribute(glowPhase, 1));
+glowGeometry.setAttribute('birthTime', new THREE.BufferAttribute(glowBirth, 1).setUsage(THREE.DynamicDrawUsage));
 const glowMaterial = pointShader();
 const glowPoints = new THREE.Points(glowGeometry, glowMaterial);
 glowPoints.frustumCulled = false;
@@ -205,6 +208,7 @@ const planetSize = new Float32Array(MAX_PLANETS);
 const planetDead = new Uint8Array(MAX_PLANETS);
 
 let stars = [], planets = [], adjacency = [], regions = [], links = [];
+let lastPopulationComplete = false;
 let indexById = new Map();
 let empty = true, spread = 220;
 let activeFactIds = new Set(), flaring = new Set();
@@ -482,6 +486,8 @@ function renderLegend(count) {
 }
 
 function populate(data) {
+  const previousIds = new Set(stars.map(star => star.id));
+  const firstLoad = !lastPopulationComplete;
   const incoming = (data.nodes || []).slice(0, MAX_STARS);
   const facts = data.edges || [];
   empty = incoming.length === 0;
@@ -510,7 +516,12 @@ function populate(data) {
     dead: false,
     index,
   }));
-  stars.forEach((star, index) => indexById.set(star.id, index));
+  stars.forEach((star, index) => {
+    indexById.set(star.id, index);
+    glowBirth[index] = !firstLoad && !previousIds.has(star.id) && !reduced ? performance.now() * 0.001 : -1;
+  });
+  glowGeometry.attributes.birthTime.needsUpdate = true;
+  lastPopulationComplete = true;
   const byAge = [...stars].sort((a, b) => (a.born || 0) - (b.born || 0) || a.id.localeCompare(b.id));
   byAge.forEach((star, rank) => { star.rank = rank; });
 
