@@ -28,12 +28,14 @@ try {
 } catch (error) { console.warn('Golem settings:', error.message); }
 
 const MAX_STARS = 1200, MAX_PLANETS = 1500, MAX_LINKS = 700, MAX_SIGNALS = 40, GAS = 5200;
-const STAR_TONES = [0xfff4dc, 0xf2cd87, 0xe8b96a, 0xd7c49a, 0xc89a55, 0xbfae84];
+// Stellar spectral palette: blue-white, white, warm yellow, orange and red.
+const STAR_TONES = [0xaacaff, 0xe0eeff, 0xfff8e7, 0xffe3a5, 0xffbb79, 0xff8c78];
 const FLARE = 0xfff0c4;
 const DIM = 0x6b4a33;
 const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x02040e);
 const camera = new THREE.PerspectiveCamera(46, 1, 0.1, 9000);
 const galaxy = new THREE.Group();
 scene.add(galaxy);
@@ -93,18 +95,41 @@ const glare = starTexture();
 const haze = sprite([[0, 'rgba(255,214,150,.16)'], [0.55, 'rgba(188,150,112,.05)'], [1, 'rgba(120,110,120,0)']]);
 
 const pointShader = () => new THREE.ShaderMaterial({
-  uniforms: {map: {value: glare}, uScale: {value: 1}},
-  vertexShader: 'attribute float size; attribute vec3 tone; varying vec3 vTone; uniform float uScale;' +
-    'void main(){ vTone = tone; vec4 mv = modelViewMatrix * vec4(position,1.0);' +
-    'gl_PointSize = size * uScale * (330.0 / -mv.z); gl_Position = projectionMatrix * mv; }',
+  uniforms: {map: {value: glare}, uScale: {value: 1}, uTime: {value: 0}, uActivity: {value: 0}},
+  vertexShader: 'attribute float size; attribute vec3 tone; attribute float phase; attribute float birthTime; varying vec3 vTone; uniform float uScale; uniform float uTime; uniform float uActivity;' +
+    'void main(){ float breath = 1.0 + 0.11 * sin(uTime * (0.65 + phase * 0.7) + phase * 6.28318);' +
+    'float age = uTime - birthTime; float newborn = birthTime >= 0.0 ? exp(-max(0.0, age) * 0.85) : 0.0;' +
+    'float pulse = breath + uActivity * 0.18 + newborn * 1.4; vTone = tone * (0.93 + 0.07 * breath + newborn * 0.9);' +
+    'vec4 mv = modelViewMatrix * vec4(position,1.0);' +
+    'gl_PointSize = min(100.0, size * uScale * pulse * (330.0 / max(1.0, -mv.z))); gl_Position = projectionMatrix * mv; }',
   fragmentShader: 'uniform sampler2D map; varying vec3 vTone;' +
     'void main(){ vec4 t = texture2D(map, gl_PointCoord); gl_FragColor = vec4(vTone,1.0) * t; }',
   transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false,
 });
 
 // Stars are solid so they can be picked and shaded; the glow layer is the flare.
+// Astronomical diffraction-star silhouettes replace spherical dots; instancing keeps draw calls low.
+function stellarGeometry() {
+  // Eight alternating rays: four long diffraction spikes and four shorter ones.
+  // A small bright centre keeps the silhouette recognisable even when zoomed out.
+  const shape = new THREE.Shape();
+  for (let point = 0; point < 16; point++) {
+    const angle = -Math.PI / 2 + point * Math.PI / 8;
+    const radius = point % 2 ? 0.17 : point % 4 === 0 ? 1.0 : 0.56;
+    const x = Math.cos(angle) * radius, y = Math.sin(angle) * radius;
+    if (!point) shape.moveTo(x, y);
+    else shape.lineTo(x, y);
+  }
+  shape.closePath();
+  const geometry = new THREE.ExtrudeGeometry(shape, {
+    depth: 0.07, bevelEnabled: true, bevelThickness: 0.045,
+    bevelSize: 0.045, bevelSegments: 1, steps: 1,
+  });
+  geometry.center();
+  return geometry;
+}
 const starMesh = new THREE.InstancedMesh(
-  new THREE.SphereGeometry(1, 8, 6),
+  stellarGeometry(),
   new THREE.MeshBasicMaterial({}),
   MAX_STARS,
 );
@@ -119,9 +144,15 @@ const glowGeometry = new THREE.BufferGeometry();
 const glowPos = new Float32Array(MAX_STARS * 3);
 const glowSize = new Float32Array(MAX_STARS);
 const glowTone = new Float32Array(MAX_STARS * 3);
+const glowPhase = new Float32Array(MAX_STARS);
+const glowBirth = new Float32Array(MAX_STARS).fill(-1);
+for (let i = 0; i < MAX_STARS; i++) glowPhase[i] = hashStarPhase(i);
+function hashStarPhase(i) { return ((Math.imul(i + 1, 2654435761) >>> 0) / 4294967296); }
 glowGeometry.setAttribute('position', new THREE.BufferAttribute(glowPos, 3).setUsage(THREE.DynamicDrawUsage));
 glowGeometry.setAttribute('size', new THREE.BufferAttribute(glowSize, 1).setUsage(THREE.DynamicDrawUsage));
 glowGeometry.setAttribute('tone', new THREE.BufferAttribute(glowTone, 3).setUsage(THREE.DynamicDrawUsage));
+glowGeometry.setAttribute('phase', new THREE.BufferAttribute(glowPhase, 1));
+glowGeometry.setAttribute('birthTime', new THREE.BufferAttribute(glowBirth, 1).setUsage(THREE.DynamicDrawUsage));
 const glowMaterial = pointShader();
 const glowPoints = new THREE.Points(glowGeometry, glowMaterial);
 glowPoints.frustumCulled = false;
@@ -165,6 +196,7 @@ gasPoints.frustumCulled = false;
 galaxy.add(gasPoints);
 
 const nebulaMaterial = new THREE.SpriteMaterial({map: haze, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false});
+const NEBULA_TONES = [0x416edc, 0x7448c5, 0xb34794, 0x1e9eae, 0xd48a49, 0x4568a3];
 const nebulae = [];
 for (let i = 0; i < 14; i++) {
   const cloud = new THREE.Sprite(nebulaMaterial.clone());
@@ -199,6 +231,7 @@ const planetSize = new Float32Array(MAX_PLANETS);
 const planetDead = new Uint8Array(MAX_PLANETS);
 
 let stars = [], planets = [], adjacency = [], regions = [], links = [];
+let lastPopulationComplete = false;
 let indexById = new Map();
 let empty = true, spread = 220;
 let activeFactIds = new Set(), flaring = new Set();
@@ -325,8 +358,11 @@ function placeGas(count) {
     gasPos[i * 3 + 1] = (a - 0.5) * 2 * flat;
     gasPos[i * 3 + 2] = Math.sin(theta) * radius + (c - 0.5) * 30;
     gasSize[i] = (2.4 + b * 3.2) * (inDisc ? 1 : 0.55);
-    const warm = inDisc ? 0.8 : 0.5;
-    gasTone[i * 3] = 0.5 * warm; gasTone[i * 3 + 1] = 0.43 * warm; gasTone[i * 3 + 2] = 0.34 * warm;
+    const spectral = new THREE.Color(STAR_TONES[Math.floor(hash('spectrum' + i, 19) * STAR_TONES.length)]);
+    const intensity = inDisc ? 0.7 : 0.32;
+    gasTone[i * 3] = spectral.r * intensity;
+    gasTone[i * 3 + 1] = spectral.g * intensity;
+    gasTone[i * 3 + 2] = spectral.b * intensity;
   }
   gasGeometry.attributes.position.needsUpdate = true;
   gasGeometry.attributes.size.needsUpdate = true;
@@ -339,11 +375,13 @@ function placeGas(count) {
     cloud.position.set(Math.cos(theta) * radius, (b - 0.5) * 26, Math.sin(theta) * radius);
     const scale = spread * (0.3 + b * 0.55);
     cloud.scale.set(scale, scale, 1);
-    cloud.material.opacity = 0.08 + a * 0.12;
+    cloud.material.color.setHex(NEBULA_TONES[i % NEBULA_TONES.length]);
+    cloud.material.opacity = 0.11 + a * 0.13;
     cloud.visible = true;
   }
   bulge.scale.setScalar(spread * (0.3 + structure * 0.25));
-  bulge.material.opacity = 0.3 + structure * 0.4;
+  bulge.material.color.setHex(0xd4b6e9);
+  bulge.material.opacity = 0.24 + structure * 0.3;
 }
 
 // Figures connect bright stars inside one region, so a constellation never
@@ -403,8 +441,8 @@ function paintStars() {
     const heat = Math.min(1, starUses[i] / 10);
     if (stars[i].dead) tint.setHex(DIM).multiplyScalar(0.6);
     else {
-      tint.setHex(region ? region.tone : STAR_TONES[0]);
-      tint.lerp(new THREE.Color(0xfffdf4), heat * 0.8).multiplyScalar(0.5 + heat * 0.7);
+      tint.setHex(STAR_TONES[Math.floor(hash(stars[i].id, 17) * STAR_TONES.length)]);
+      tint.lerp(new THREE.Color(0xffffff), heat * 0.55).multiplyScalar(0.55 + heat * 0.65);
     }
     if (flaring.has(i)) tint.setHex(FLARE);
     if (i === cursor) tint.setHex(0xffffff);
@@ -476,6 +514,8 @@ function renderLegend(count) {
 }
 
 function populate(data) {
+  const previousIds = new Set(stars.map(star => star.id));
+  const firstLoad = !lastPopulationComplete;
   const incoming = (data.nodes || []).slice(0, MAX_STARS);
   const facts = data.edges || [];
   empty = incoming.length === 0;
@@ -504,7 +544,12 @@ function populate(data) {
     dead: false,
     index,
   }));
-  stars.forEach((star, index) => indexById.set(star.id, index));
+  stars.forEach((star, index) => {
+    indexById.set(star.id, index);
+    glowBirth[index] = !firstLoad && !previousIds.has(star.id) && !reduced ? performance.now() * 0.001 : -1;
+  });
+  glowGeometry.attributes.birthTime.needsUpdate = true;
+  lastPopulationComplete = true;
   const byAge = [...stars].sort((a, b) => (a.born || 0) - (b.born || 0) || a.id.localeCompare(b.id));
   byAge.forEach((star, rank) => { star.rank = rank; });
 
@@ -1057,6 +1102,8 @@ function animate(now) {
   const breath = reduced ? 0 : Math.sin(now * 0.00045);
   coreLight.intensity = 2.1 + breath * 0.25 + activity * 0.6;
   glowMaterial.uniforms.uScale.value = 1 + breath * 0.05 + activity * 0.25;
+  glowMaterial.uniforms.uTime.value = reduced ? 0 : now * 0.001;
+  glowMaterial.uniforms.uActivity.value = activity;
   bulge.material.opacity = Math.min(1, 0.3 + activity * 0.3 + breath * 0.05 + (empty ? 0 : 0.18));
   // The whole disc turns slowly, like a galaxy should.
   if (preferences.autoRotate && !reduced && !drag) want.theta += delta * 0.00006;
