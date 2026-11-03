@@ -106,8 +106,23 @@ const pointShader = () => new THREE.ShaderMaterial({
 });
 
 // Stars are solid so they can be picked and shaded; the glow layer is the flare.
+// Five pointed stellar silhouettes replace spherical dots; instancing keeps draw calls low.
+function stellarGeometry() {
+  const shape = new THREE.Shape();
+  for (let point = 0; point < 10; point++) {
+    const angle = -Math.PI / 2 + point * Math.PI / 5;
+    const radius = point % 2 ? 0.43 : 1;
+    const x = Math.cos(angle) * radius, y = Math.sin(angle) * radius;
+    if (point === 0) shape.moveTo(x, y);
+    else shape.lineTo(x, y);
+  }
+  shape.closePath();
+  const geometry = new THREE.ExtrudeGeometry(shape, {depth:0.12,bevelEnabled:true,bevelThickness:0.1,bevelSize:0.1,bevelSegments:1,steps:1,curveSegments:1});
+  geometry.center();
+  return geometry;
+}
 const starMesh = new THREE.InstancedMesh(
-  new THREE.SphereGeometry(1, 8, 6),
+  stellarGeometry(),
   new THREE.MeshBasicMaterial({}),
   MAX_STARS,
 );
