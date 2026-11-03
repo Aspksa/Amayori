@@ -178,8 +178,8 @@
       updateInspectorVisibility();
       $("map-actions").hidden = !graph.nodes.length;
       $("golem-diagnostics").textContent = graph.nodes.length
-        ? source === "postgresql"
-          ? "Знания из базы"
+        ? ["postgresql", "local-knowledge"].includes(source)
+          ? "Связи между знаниями"
           : "Связи из переписки"
         : "";
       $("graph-empty").hidden = graph.nodes.length > 0;
@@ -189,7 +189,7 @@
       $("graph-empty").querySelector("p").textContent = query
         ? "Измените запрос или сбросьте карту."
         : "После переписки здесь появится карта ваших знаний.";
-      $("golem-more").disabled = source !== "postgresql" || offset >= total;
+      $("golem-more").disabled = !["postgresql", "local-knowledge"].includes(source) || offset >= total;
       $("golem-more").hidden = $("golem-more").disabled;
       layout();
     } catch (error) {

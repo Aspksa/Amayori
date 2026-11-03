@@ -1,10 +1,11 @@
 import {recall} from './store.mjs';
-import {findFacts, searchMemory} from './postgres.mjs';
+import {searchMemory} from './postgres.mjs';
+import {knowledge} from './knowledge-repository.mjs';
 import {cloudEmbedding} from './cloud-embedding.mjs';
 
 export async function collectChatMemory({text, config, databaseEnabled, embeddingModel}, dependencies = {}) {
   const lexicalRecall = dependencies.recall || recall;
-  const factsSearch = dependencies.findFacts || findFacts;
+  const factsSearch = dependencies.findFacts || ((q,limit)=>knowledge.find(q,limit));
   const vectorSearch = dependencies.searchMemory || searchMemory;
   const embed = dependencies.cloudEmbedding || cloudEmbedding;
   const warnings = [];
