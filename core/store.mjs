@@ -1,3 +1,4 @@
+import {createHash,randomUUID} from 'node:crypto';
 import fs from 'node:fs/promises';
 import {loadCanonicalChats,appendCanonicalExchange} from './postgres.mjs';
 import path from 'node:path';
@@ -5,7 +6,7 @@ import {fileURLToPath} from 'node:url';
 const dir=path.join(path.dirname(fileURLToPath(import.meta.url)),'..','data');
 const file=name=>path.join(dir,name);
 export const postgresCanonical=()=>Boolean(process.env.AMAYORI_DATABASE_URL);
-export async function chatHistory(limit=null){if(postgresCanonical()){const rows=await loadCanonicalChats(limit);if(rows.length===0){const old=await read('chats.json',[]);if(old.length)throw Error('Existing local chats require migration: npm.cmd run migrate:postgres')}return rows}const data=await read('chats.json',[]);return limit===null?data:data.slice(-limit)}
+export async function chatHistory(limit=null){if(postgresCanonical()){const rows=await loadCanonicalChats(limit);if(rows.length===0){const old=await read('chats.json',[]);if(old.length)throw Error('Existing local chats require migration: npm.cmd run migrate:postgres')}return rows}const data=(await read('chats.json',[])).map((m,i)=>({...m,id:m.id||'local-'+createHash('sha256').update(JSON.stringify([i,m.role,m.at,m.content])).digest('hex').slice(0,24)}));return limit===null?data:data.slice(-limit)}
 export async function refreshGolemSnapshot(){if(!postgresCanonical())return;const chats=await loadCanonicalChats();await write('chats.json',chats);await rebuildChatGraph(chats)}
 // chats.json and graph.json are derived from the canonical store, so a burst of
 // messages costs one rebuild instead of one per message. Set
@@ -32,6 +33,7 @@ export async function recall(text){const terms=tokenize(text);if(!terms.length)r
 export async function record(user,assistant){return serialized(async()=>{
  if(postgresCanonical()){await chatHistory(1);const messageId=await appendCanonicalExchange(user,assistant);await scheduleDerivedRefresh();return {messageId}}
  const messages=await read('chats.json',[]),now=new Date().toISOString();
- messages.push({role:'user',content:user,at:now},{role:'assistant',content:assistant,at:now});
- await write('chats.json',messages);await scheduleDerivedRefresh();return {messageId:null};
+ const messageId=randomUUID();
+ messages.push({id:messageId,role:'user',content:user,at:now},{id:randomUUID(),role:'assistant',content:assistant,at:now});
+ await write('chats.json',messages);await scheduleDerivedRefresh();return {messageId};
 })}

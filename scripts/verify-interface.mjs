@@ -178,6 +178,24 @@ try {
         source: semanticScenario ? "postgresql" : "postgresql-unavailable",
       };
     else if (p === "/api/knowledge/facts") data = { facts };
+    else if (p === "/api/knowledge/card")
+      data = {
+        ...facts.find((f) => String(f.id) === url.searchParams.get("id")),
+        sources: [],
+        history: [],
+        conflicts: [],
+        duplicates: [],
+        related: [facts[1]],
+      };
+    else if (p === "/api/knowledge/extraction")
+      data = {
+        enabled: false,
+        queued: 0,
+        running: false,
+        failed: 0,
+        completed: 0,
+        lastError: "",
+      };
     else if (p === "/api/knowledge/related") data = { facts: [facts[1]] };
     else if (p === "/api/golem/immunity")
       data = { duplicates: [], conflicts: [], unverified: [facts[1]] };
@@ -1112,6 +1130,164 @@ try {
   assert.equal(await work.locator("#nav-pinned a").count(), 4);
   checks.push(
     "Touch split mode preserves multiline drafts; malformed saved preferences recover to the approved default layout",
+  );
+
+  // Exercise the knowledge UI against the real isolated local repository.
+  const knowledgeContext = await browser.newContext({
+    viewport: { width: 1440, height: 950 },
+    timezoneId: "Asia/Vladivostok",
+  });
+  const k = await knowledgeContext.newPage();
+  k.on("pageerror", (error) => errors.push(error.message));
+  await k.goto(base + "/#memory/facts");
+  await k.locator("#knowledge-add").waitFor();
+  async function addCard(
+    object,
+    {
+      topic = "Дизайн",
+      subject = "Amayori",
+      predicate = "тема интерфейса",
+    } = {},
+  ) {
+    await k.locator("#knowledge-add").click();
+    const form = k.locator("#knowledge-add-form");
+    await form.locator("[name=subject]").fill(subject);
+    await form.locator("[name=predicate]").fill(predicate);
+    await form.locator("[name=object]").fill(object);
+    await form.locator("[name=topic]").fill(topic);
+    await form.locator("[name=kind]").selectOption("preference");
+    await form.locator("[name=exclusive]").check();
+    await form.locator("[type=submit]").click();
+    await k.locator("#knowledge-add-dialog").waitFor({ state: "hidden" });
+    await k.locator("#knowledge-detail-content .knowledge-value").waitFor();
+  }
+  await addCard("Матовый чёрный золотой интерфейс");
+  assert.equal(await k.locator("#facts-list .fact-card").count(), 1);
+  const firstId = await k
+    .locator("#facts-list .fact-card")
+    .getAttribute("data-fact-id");
+  await k.locator("#knowledge-detail-close").click();
+  await addCard("матовый чёрный золотой интерфейс.");
+  assert.equal(await k.locator("#facts-list .fact-card").count(), 1);
+  assert.equal(
+    await k.locator("#facts-list .fact-card").getAttribute("data-fact-id"),
+    firstId,
+  );
+  await k.locator("#knowledge-detail-close").click();
+  await addCard("Белая тема");
+  assert.equal(
+    await k.locator("#knowledge-status-filter").inputValue(),
+    "candidate",
+  );
+  await k
+    .getByRole("button", { name: "Сделать актуальным", exact: true })
+    .click();
+  await k
+    .locator("#knowledge-detail-content")
+    .getByText("История изменений", { exact: true })
+    .waitFor();
+  await k.locator("#knowledge-status-filter").selectOption("active");
+  await k.locator("#facts-list .fact-open").first().click();
+  await k
+    .locator("#knowledge-detail-content .knowledge-value")
+    .filter({ hasText: "Белая тема" })
+    .waitFor();
+  await k.reload();
+  await k.locator("#facts-list .fact-open").first().click();
+  await k
+    .locator("#knowledge-detail-content")
+    .getByText("История изменений", { exact: true })
+    .waitFor();
+  await k.locator("#knowledge-detail-close").click();
+  await addCard("Белая тема проекта");
+  await k
+    .getByRole("button", { name: "Объединить с этой карточкой", exact: true })
+    .click();
+  await k
+    .locator("#knowledge-detail-content")
+    .getByText("История изменений", { exact: true })
+    .waitFor();
+  assert.equal(
+    (await (await k.request.get(base + "/api/knowledge/facts")).json()).total,
+    1,
+  );
+  await k.locator("#knowledge-detail-close").click();
+  await addCard('<img src=x onerror="window.injected=true">', {
+    topic: "Безопасность",
+    subject: "Тест",
+    predicate: "текст",
+  });
+  assert.equal(await k.evaluate(() => window.injected), undefined);
+  assert.equal(await k.locator("#knowledge-detail-content img").count(), 0);
+  await k.locator("#knowledge-detail-close").click();
+  await k.locator("#knowledge-topic-filter").selectOption("Дизайн");
+  await k.waitForFunction(
+    () => document.querySelectorAll("#facts-list .fact-card").length === 1,
+  );
+  await k.locator("#knowledge-topic-filter").selectOption("");
+  await k.waitForFunction(
+    () => document.querySelectorAll("#facts-list .fact-card").length === 2,
+  );
+  const selectedCard = k
+    .locator("#facts-list .fact-card")
+    .filter({ hasText: "Белая тема проекта" });
+  await selectedCard.locator(".fact-open").click();
+  await k
+    .locator("#knowledge-detail-content .knowledge-value")
+    .filter({ hasText: "Белая тема проекта" })
+    .waitFor();
+  for (const width of [320, 390, 768, 1366, 1920]) {
+    await k.setViewportSize({ width, height: 950 });
+    await k.waitForTimeout(30);
+    const bounds = await k.evaluate(() => ({
+      width: document.documentElement.clientWidth,
+      scroll: document.documentElement.scrollWidth,
+      top: document.querySelector(".topbar").getBoundingClientRect().top,
+      detail: document
+        .getElementById("knowledge-detail")
+        .getBoundingClientRect()
+        .toJSON(),
+    }));
+    assert.equal(bounds.width, bounds.scroll, "knowledge detail fits " + width);
+    assert.equal(bounds.top, 0);
+    assert.ok(bounds.detail.height > 180);
+    await k.locator("#knowledge-detail-close").click();
+    const add = k.locator("#knowledge-add");
+    await add.click();
+    const form = k.locator("#knowledge-add-dialog");
+    assert.equal(await form.isVisible(), true);
+    const dialog = await form.boundingBox();
+    assert.ok(dialog.x >= 0 && dialog.x + dialog.width <= width + 1);
+    await k.keyboard.press("Escape");
+    await selectedCard.locator(".fact-open").click();
+    await k
+      .locator("#knowledge-detail-content .knowledge-value")
+      .filter({ hasText: "Белая тема проекта" })
+      .waitFor();
+  }
+  await k.locator("#knowledge-detail-close").click();
+  await Promise.all([
+    k.waitForResponse(
+      (r) =>
+        r.url().endsWith("/api/knowledge/extraction") &&
+        r.request().method() === "POST",
+    ),
+    k.locator("#knowledge-auto").uncheck(),
+  ]);
+  await k.reload();
+  assert.equal(await k.locator("#knowledge-auto").isChecked(), false);
+  await k.locator("#knowledge-extract").click();
+  await k
+    .locator("#knowledge-extract-text")
+    .fill("Моя выбранная тема — чёрно-золотая");
+  await k.locator("#knowledge-extract-form [type=submit]").click();
+  await k
+    .locator("#knowledge-extract-error")
+    .filter({ hasText: "Выберите модель Cloud.ru" })
+    .waitFor();
+  await k.keyboard.press("Escape");
+  checks.push(
+    "Real local knowledge cards merge repeats, retain chosen versions and sources, filter by topic and safely render user content; desktop/mobile details and forms fit 320–1920 px",
   );
 
   assert.deepEqual(errors, [], "no browser JavaScript errors");

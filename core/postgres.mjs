@@ -57,9 +57,9 @@ export async function ensureCanonicalTable(){
 export async function loadCanonicalChats(limit=null){
  const db=await ensureCanonicalTable();
  const result=limit===null
- ?await db.query('SELECT role,content,created_at FROM amayori_chat_log ORDER BY id')
- :await db.query('SELECT role,content,created_at FROM (SELECT id,role,content,created_at FROM amayori_chat_log ORDER BY id DESC LIMIT $1) t ORDER BY id',[limit]);
- return result.rows.map(r=>({role:r.role,content:r.content,at:r.created_at.toISOString()}));
+ ?await db.query('SELECT id,role,content,created_at FROM amayori_chat_log ORDER BY id')
+ :await db.query('SELECT id,role,content,created_at FROM (SELECT id,role,content,created_at FROM amayori_chat_log ORDER BY id DESC LIMIT $1) t ORDER BY id',[limit]);
+ return result.rows.map(r=>({id:String(r.id),role:r.role,content:r.content,at:r.created_at.toISOString()}));
 }
 export async function appendCanonicalExchange(user,assistant){
  const db=await ensureCanonicalTable(),client=await db.connect();
@@ -87,8 +87,8 @@ export async function importCanonicalChats(messages){
 }
 
 /** Structured facts are versioned; superseded claims are kept for audit. */
-export async function ensureKnowledgeTables(){
- const db=await database();if(!db)return null;
+export async function ensureKnowledgeTables(providedDatabase=null){
+ const db=providedDatabase||await database();if(!db)return null;
  await db.query(`CREATE TABLE IF NOT EXISTS amayori_facts(
  id BIGSERIAL PRIMARY KEY, subject TEXT NOT NULL, predicate TEXT NOT NULL,
  object TEXT NOT NULL, source TEXT NOT NULL DEFAULT 'chat', source_message_id BIGINT,
@@ -96,6 +96,7 @@ export async function ensureKnowledgeTables(){
  status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','superseded','rejected')),
  superseded_by BIGINT, created_at TIMESTAMPTZ NOT NULL DEFAULT now())`);
  await db.query('ALTER TABLE amayori_facts ADD COLUMN IF NOT EXISTS source_message_id BIGINT');
+ await db.query("ALTER TABLE amayori_facts ADD COLUMN IF NOT EXISTS knowledge_meta JSONB NOT NULL DEFAULT '{}'::jsonb");
  await db.query('CREATE INDEX IF NOT EXISTS amayori_facts_lookup_idx ON amayori_facts(subject,predicate,status)');
  await db.query(`CREATE TABLE IF NOT EXISTS amayori_feedback(
  id BIGSERIAL PRIMARY KEY, chat_excerpt TEXT NOT NULL,
@@ -103,33 +104,15 @@ export async function ensureKnowledgeTables(){
  note TEXT NOT NULL DEFAULT '', created_at TIMESTAMPTZ NOT NULL DEFAULT now())`);
  return db;
 }
-export async function saveFact({subject,predicate,object,source='user-confirmed',sourceMessageId=null}){
- if(sourceMessageId!==null&&(!Number.isSafeInteger(sourceMessageId)||sourceMessageId<1))throw Error('Invalid source message ID');
- for(const value of [subject,predicate,object,source])if(typeof value!=='string'||!value.trim()||value.length>500)throw Error('Invalid fact');
- const db=await ensureKnowledgeTables();if(!db)throw Error('PostgreSQL required for knowledge');
- const client=await db.connect();try{
- await client.query('BEGIN');
- const prior=await client.query('SELECT id,object FROM amayori_facts WHERE subject=$1 AND predicate=$2 AND status=$3 FOR UPDATE',[subject,predicate,'active']);
- const same=prior.rows.find(x=>x.object===object);
- if(same){await client.query('COMMIT');return {id:same.id,changed:false,conflicts:[]}}
- const inserted=await client.query('INSERT INTO amayori_facts(subject,predicate,object,source,source_message_id) VALUES($1,$2,$3,$4,$5) RETURNING id',[subject,predicate,object,source,sourceMessageId]);
- const id=inserted.rows[0].id;
- if(prior.rows.length)await client.query("UPDATE amayori_facts SET status='superseded',superseded_by=$1 WHERE id=ANY($2::bigint[])",[id,prior.rows.map(x=>x.id)]);
- await client.query('COMMIT');return {id,changed:true,conflicts:prior.rows.map(x=>({id:x.id,object:x.object}))};
- }catch(e){await client.query('ROLLBACK');throw e}finally{client.release()}
+export async function saveFact(input){
+ const {knowledge}=await import('./knowledge-repository.mjs');
+ return (await knowledge.save([input],{kind:input.source||'user-confirmed',messageId:input.sourceMessageId}))[0];
 }
 export async function findFacts(query='',limit=15){
- const db=await ensureKnowledgeTables();if(!db)return [];
- const q=String(query).slice(0,200).replace(/[\\%_]/g,'\\$&');
- const r=await db.query("SELECT id,subject,predicate,object,source,confidence,created_at FROM amayori_facts WHERE status='active' AND ($1='' OR subject ILIKE '%'||$1||'%' ESCAPE '\\' OR predicate ILIKE '%'||$1||'%' ESCAPE '\\' OR object ILIKE '%'||$1||'%' ESCAPE '\\') ORDER BY id DESC LIMIT $2",[q,Math.max(1,Math.min(50,limit))]);
- return r.rows;
+ const {knowledge}=await import('./knowledge-repository.mjs');return knowledge.find(query,limit);
 }
 export async function knowledgeGraph(){
- const db=await ensureKnowledgeTables();if(!db)return {nodes:[],edges:[]};
- const r=await db.query("SELECT id,subject,predicate,object FROM amayori_facts WHERE status='active' ORDER BY id DESC LIMIT 500");
- const nodes=new Map(),edges=[];
- for(const f of r.rows){for(const name of [f.subject,f.object])if(!nodes.has(name))nodes.set(name,{id:name,label:name});edges.push({id:String(f.id),source:f.subject,target:f.object,label:f.predicate})}
- return {nodes:[...nodes.values()],edges};
+ const {knowledge}=await import('./knowledge-repository.mjs');return knowledge.graph({limit:100});
 }
 export async function saveFeedback({chatExcerpt,rating,note=''}) {
  if(typeof chatExcerpt!=='string'||chatExcerpt.length>2000||!chatExcerpt.trim()||![-1,1].includes(rating)||typeof note!=='string'||note.length>1000)throw Error('Invalid feedback');

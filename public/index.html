@@ -264,22 +264,113 @@
               aria-labelledby="tab-facts"
               hidden
             >
-              <form id="facts-search-form" class="section-toolbar">
+              <div class="knowledge-heading">
+                <span id="knowledge-count" class="muted small-text"
+                  >Ваши знания</span
+                >
+                <div class="knowledge-actions">
+                  <label
+                    class="knowledge-auto-label"
+                    title="Дополнительный запрос к Cloud.ru после нового сообщения"
+                    ><input
+                      id="knowledge-auto"
+                      type="checkbox"
+                      role="switch"
+                    />Авторазбор</label
+                  >
+                  <button
+                    id="knowledge-extract"
+                    class="button subtle"
+                    type="button"
+                  >
+                    Извлечь
+                  </button>
+                  <button
+                    id="knowledge-add"
+                    class="button primary"
+                    type="button"
+                  >
+                    Добавить
+                  </button>
+                </div>
+              </div>
+              <form id="facts-search-form" class="knowledge-filters">
                 <label class="search-field"
                   ><svg aria-hidden="true" class="icon">
                     <use href="/icons.svg#search"></use></svg
                   ><input
                     id="facts-search"
                     type="search"
-                    placeholder="Сущность, факт или отношение"
-                    aria-label="Поиск знаний" /></label
-                ><button class="button subtle" type="submit">Найти</button>
+                    placeholder="Сущность, факт или тема"
+                    aria-label="Поиск знаний"
+                    maxlength="200"
+                /></label>
+                <select id="knowledge-topic-filter" aria-label="Тема знаний">
+                  <option value="">Все темы</option>
+                </select>
+                <select id="knowledge-kind-filter" aria-label="Тип знания">
+                  <option value="">Все типы</option>
+                  <option value="project">Проекты</option>
+                  <option value="person">Люди</option>
+                  <option value="preference">Предпочтения</option>
+                  <option value="task">Задачи</option>
+                  <option value="decision">Решения</option>
+                  <option value="general">Общее</option>
+                </select>
+                <select
+                  id="knowledge-status-filter"
+                  aria-label="Состояние знания"
+                >
+                  <option value="active">Актуальные</option>
+                  <option value="candidate">Расхождения</option>
+                  <option value="superseded">История</option>
+                  <option value="all">Все версии</option>
+                </select>
+                <button class="button subtle" type="submit">Найти</button>
               </form>
-              <div
-                id="facts-list"
-                class="facts-list scroll-area"
-                aria-live="polite"
-              ></div>
+              <p
+                id="knowledge-extraction-status"
+                class="knowledge-extraction-status"
+                role="status"
+              ></p>
+              <div id="knowledge-body" class="knowledge-body">
+                <div class="knowledge-list-pane">
+                  <div
+                    id="facts-list"
+                    class="facts-list scroll-area"
+                    aria-live="polite"
+                  ></div>
+                  <button
+                    id="knowledge-more"
+                    type="button"
+                    class="text-button"
+                    hidden
+                  >
+                    Показать ещё
+                  </button>
+                </div>
+                <aside
+                  id="knowledge-detail"
+                  class="knowledge-detail"
+                  aria-labelledby="knowledge-detail-title"
+                  hidden
+                >
+                  <div class="knowledge-detail-heading">
+                    <span id="knowledge-detail-title">Карточка знания</span
+                    ><button
+                      id="knowledge-detail-close"
+                      class="icon-button"
+                      aria-label="Закрыть карточку знания"
+                      type="button"
+                    >
+                      <svg class="icon" aria-hidden="true">
+                        <use href="/icons.svg#close"></use>
+                      </svg>
+                    </button>
+                  </div>
+                  <div id="knowledge-detail-content" class="scroll-area"></div>
+                </aside>
+              </div>
             </div>
             <div
               id="memory-quality"
@@ -808,9 +899,133 @@
       <div id="nav-overflow-links"></div>
     </nav>
     <div id="toast" class="toast" role="status" hidden></div>
+    <dialog
+      id="knowledge-add-dialog"
+      class="knowledge-dialog"
+      aria-labelledby="knowledge-add-title"
+    >
+      <form id="knowledge-add-form">
+        <div class="knowledge-dialog-heading">
+          <h2 id="knowledge-add-title">Новое знание</h2>
+          <button
+            type="button"
+            class="icon-button"
+            data-close-knowledge-dialog
+            aria-label="Закрыть добавление знания"
+          >
+            <svg class="icon" aria-hidden="true">
+              <use href="/icons.svg#close"></use>
+            </svg>
+          </button>
+        </div>
+        <label
+          >О ком или о чём<input
+            name="subject"
+            placeholder="Например, Amayori"
+            required
+            maxlength="500"
+        /></label>
+        <label
+          >Отношение или свойство<input
+            name="predicate"
+            placeholder="Например, тема интерфейса"
+            required
+            maxlength="500"
+        /></label>
+        <label
+          >Значение<textarea
+            name="object"
+            placeholder="Чёрно-золотая"
+            required
+            maxlength="500"
+            rows="2"
+          ></textarea>
+        </label>
+        <div class="knowledge-form-grid">
+          <label
+            >Тема<input
+              name="topic"
+              placeholder="Например, Дизайн"
+              maxlength="100" /></label
+          ><label
+            >Тип<select name="kind">
+              <option value="general">Общее</option>
+              <option value="project">Проект</option>
+              <option value="person">Человек</option>
+              <option value="preference">Предпочтение</option>
+              <option value="task">Задача</option>
+              <option value="decision">Решение</option>
+            </select></label
+          >
+        </div>
+        <label class="knowledge-exclusive"
+          ><input type="checkbox" name="exclusive" />Только одно актуальное
+          значение</label
+        >
+        <p class="field-hint">
+          Для выбранной темы, текущего города или решения. Увлечения и участники
+          проекта могут иметь несколько значений. Противоречия сохраняются до
+          вашего выбора.
+        </p>
+        <p id="knowledge-add-error" class="inline-status" role="status"></p>
+        <button type="submit" class="button primary">Сохранить знание</button>
+      </form>
+    </dialog>
+    <dialog
+      id="knowledge-extract-dialog"
+      class="knowledge-dialog"
+      aria-labelledby="knowledge-extract-title"
+    >
+      <form id="knowledge-extract-form">
+        <div class="knowledge-dialog-heading">
+          <h2 id="knowledge-extract-title">Извлечь знания</h2>
+          <button
+            type="button"
+            class="icon-button"
+            data-close-knowledge-dialog
+            aria-label="Закрыть извлечение знаний"
+          >
+            <svg class="icon" aria-hidden="true">
+              <use href="/icons.svg#close"></use>
+            </svg>
+          </button>
+        </div>
+        <p class="field-hint">
+          Cloud.ru выделит до пяти явно сказанных сведений из текста. Это
+          дополнительный запрос к вашей модели. Повторы объединяются, спорные
+          значения сохраняются отдельно.
+        </p>
+        <label for="knowledge-extract-text">Текст пользователя</label
+        ><textarea
+          id="knowledge-extract-text"
+          required
+          maxlength="4000"
+          rows="6"
+          placeholder="Вставьте сообщение, из которого нужно сохранить знания"
+        ></textarea>
+        <p id="knowledge-extract-error" class="inline-status" role="status"></p>
+        <button class="button primary" type="submit">Извлечь из текста</button>
+        <div class="knowledge-extract-archive">
+          <h3>Из переписки</h3>
+          <p class="field-hint">
+            До 10 последних ваших сообщений, которые ещё не разобраны. До одного
+            дополнительного запроса на сообщение. Авторазбор новых сообщений
+            включится; отключить его можно переключателем в разделе «Знания».
+          </p>
+          <button
+            id="knowledge-extract-recent"
+            class="button subtle"
+            type="button"
+          >
+            Разобрать последние сообщения
+          </button>
+        </div>
+      </form>
+    </dialog>
     <script src="/ui.js" defer></script>
     <script src="/workspace-prefs.js" defer></script>
     <script src="/workspace.js" defer></script>
+    <script src="/knowledge.js" defer></script>
     <script src="/app.js" defer></script>
     <script src="/chat-avatar.js" defer></script>
     <script src="/knowledge-map.js" defer></script>

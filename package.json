@@ -1,6 +1,6 @@
 {
   "name": "amayori",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -10,7 +10,8 @@
     "training:export": "node scripts/export-reviewed-dataset.mjs",
     "test:syntax": "node scripts/check-syntax.mjs",
     "tour": "node scripts/interface-tour.mjs",
-    "test:ui": "node scripts/verify-interface.mjs"
+    "test:ui": "node scripts/verify-interface.mjs",
+    "migrate:knowledge": "node scripts/migrate-knowledge.mjs"
   },
   "dependencies": {
     "pg": "^8.13.1",
