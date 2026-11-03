@@ -366,4 +366,18 @@ test("extraction can be disabled; failed jobs wait for explicit retry and never 
   await f.service.wait();
   assert.equal((await f.service.status()).completed, 1);
   assert.equal((await f.repo.list()).total, 1);
+  fail = true;
+  await f.service.enqueue([
+    { id: "manual-retry", role: "user", content: "Другой источник" },
+  ]);
+  await f.service.wait();
+  assert.deepEqual(await f.service.problemMessages(), ["manual-retry"]);
+  await f.repo.save([input], {
+    kind: "cloudru-extracted",
+    messageId: "manual-retry",
+    excerpt: "Другой источник",
+  });
+  await f.service.completeMessage("manual-retry", 1);
+  assert.equal((await f.service.status()).failed, 0);
+  assert.deepEqual(await f.service.problemMessages(), []);
 });

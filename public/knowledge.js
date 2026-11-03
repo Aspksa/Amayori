@@ -71,49 +71,39 @@
     const article = document.createElement("article");
     article.className = "fact-card";
     article.dataset.factId = fact.id;
-    const open = button("", () => void showDetail(fact.id), "fact-open");
+    const open = button(
+      "",
+      () => {
+        if (selected === String(fact.id)) closeDetail();
+        else void showDetail(fact.id);
+      },
+      "fact-open",
+    );
     open.setAttribute(
       "aria-label",
       "Открыть знание: " + fact.subject + " — " + fact.object,
     );
     const triple = document.createElement("div");
     triple.className = "fact-triple";
-    for (const [value, name] of [
-      [fact.subject, "subject"],
-      [fact.predicate, "predicate"],
-      [fact.object, "object"],
-    ])
-      triple.append(text("span", value, name));
-    open.append(triple);
-    const meta = document.createElement("div");
-    meta.className = "knowledge-card-meta";
-    meta.append(
-      text("span", fact.topic || "Без темы", "knowledge-topic"),
-      text("span", kindNames[fact.kind] || "Общее"),
+    triple.append(
+      text("span", fact.subject + " · " + fact.predicate, "fact-row-label"),
+      text("span", fact.object, "object"),
     );
+    open.append(triple);
+    open.setAttribute("aria-expanded", String(selected === String(fact.id)));
+    const tail = document.createElement("span");
+    tail.className = "knowledge-row-tail";
     if (fact.status && fact.status !== "active")
-      meta.append(
+      tail.append(
         text(
           "span",
           statusNames[fact.status],
           "knowledge-state " + fact.status,
         ),
       );
-    open.append(meta);
-    const footer = document.createElement("div");
-    footer.className = "fact-footer";
-    footer.append(
-      text(
-        "span",
-        sourcesLabel(fact) +
-          (fact.sources?.length > 1
-            ? " · " + fact.sources.length + " источн."
-            : ""),
-        "source-badge",
-      ),
-      button("Подробнее", () => void showDetail(fact.id)),
-    );
-    article.append(open, footer);
+    tail.append(text("span", "⌄", "knowledge-row-chevron"));
+    open.append(tail);
+    article.append(open);
     return article;
   }
   async function load(append = false) {
@@ -128,11 +118,16 @@
     try {
       const data = await api("/api/knowledge/facts?" + query);
       if (ticket !== request) return;
-      if (!append) target.replaceChildren();
+      const detail = $("knowledge-detail");
+      if (!append) {
+        $("knowledge-body").append(detail);
+        target.replaceChildren();
+      }
+
       for (const fact of data.facts) target.append(card(fact));
       offset += data.facts.length;
       total = data.total ?? data.facts.length;
-      $("knowledge-count").textContent = "Найдено: " + total;
+      $("topic-knowledge-count").textContent = String(total);
       $("knowledge-more").hidden = offset >= total;
       $("knowledge-more").disabled = false;
       if (!offset)
@@ -150,12 +145,20 @@
       if (chosen && ![...select.options].some((o) => o.value === chosen))
         select.add(new Option(chosen, chosen));
       select.value = chosen;
+      if (selected) {
+        const row = [...target.querySelectorAll("[data-fact-id]")].find(
+          (node) => node.dataset.factId === selected,
+        );
+        if (row) row.after($("knowledge-detail"));
+      }
       void refreshExtraction();
     } catch (error) {
-      if (ticket === request)
+      if (ticket === request) {
+        $("knowledge-body").append($("knowledge-detail"));
         target.replaceChildren(
           empty("Не удалось загрузить знания", error.message),
         );
+      }
     }
   }
   function closeDetail() {
@@ -163,6 +166,10 @@
     selected = null;
     $("knowledge-detail").hidden = true;
     $("knowledge-body").classList.remove("has-selection");
+    $("knowledge-body").append($("knowledge-detail"));
+    document
+      .querySelectorAll('.fact-open[aria-expanded="true"]')
+      .forEach((button) => button.setAttribute("aria-expanded", "false"));
   }
   function section(title, nodes) {
     const block = document.createElement("section");
@@ -214,7 +221,23 @@
     selected = String(id);
     const ticket = ++detailRequest,
       target = $("knowledge-detail-content");
-    $("knowledge-detail").hidden = false;
+    const detail = $("knowledge-detail");
+    const row = [...document.querySelectorAll("[data-fact-id]")].find(
+      (node) => node.dataset.factId === String(id),
+    );
+    if (row) row.after(detail);
+    else $("knowledge-body").append(detail);
+    document
+      .querySelectorAll(".fact-open")
+      .forEach((button) =>
+        button.setAttribute(
+          "aria-expanded",
+          String(
+            button.closest("[data-fact-id]").dataset.factId === String(id),
+          ),
+        ),
+      );
+    detail.hidden = false;
     $("knowledge-body").classList.add("has-selection");
     $("knowledge-detail-title").textContent = "Карточка знания";
     target.replaceChildren(text("p", "Загружаем…", "muted"));
@@ -282,6 +305,41 @@
           ),
         );
       }
+      if (!["merged", "rejected"].includes(fact.status)) {
+        const editor = document.createElement("details");
+        editor.className = "knowledge-topic-editor";
+        editor.open = fact.topic === "Без темы";
+        const summary = text("summary", "Изменить тему");
+        const label = text("label", "Тема карточки");
+        label.htmlFor = "knowledge-edit-topic";
+        const input = document.createElement("input");
+        input.id = "knowledge-edit-topic";
+        input.type = "text";
+        input.maxLength = 100;
+        input.placeholder = "Проект / Тема";
+        input.value = fact.topic === "Без темы" ? "" : fact.topic;
+        const save = button(
+          "Назначить тему",
+          async (event) => {
+            const control = event.currentTarget;
+            control.disabled = true;
+            try {
+              await api("/api/knowledge/topic", {
+                method: "POST",
+                body: JSON.stringify({ id: fact.id, topic: input.value }),
+              });
+              await UI.topics.refreshAndOpenFact(fact.id);
+            } catch (error) {
+              $("topic-window-status").textContent = error.message;
+            } finally {
+              control.disabled = false;
+            }
+          },
+          "button subtle",
+        );
+        editor.append(summary, label, input, save);
+        target.append(editor);
+      }
       const sourceNodes = (fact.sources || []).map((source) => {
         const block = document.createElement("div");
         block.className = "knowledge-source";
@@ -300,10 +358,10 @@
         );
         if (source.messageId && source.excerpt)
           block.append(
-            button("Перейти к переписке", () => {
-              UI.navigate("chat");
-              window.AmayoriChat?.openMessage(source.excerpt);
-            }),
+            button(
+              "Открыть беседу",
+              () => void UI.topics.openSource(source.messageId, fact.id),
+            ),
           );
         return block;
       });
@@ -366,11 +424,7 @@
     closeDetail();
     void load();
   });
-  for (const id of [
-    "knowledge-topic-filter",
-    "knowledge-kind-filter",
-    "knowledge-status-filter",
-  ])
+  for (const id of ["knowledge-kind-filter", "knowledge-status-filter"])
     $(id).addEventListener("change", () => {
       closeDetail();
       void load();
@@ -432,8 +486,7 @@
       $("facts-search").value = "";
       $("knowledge-topic-filter").value = "";
       $("knowledge-kind-filter").value = "";
-      await load();
-      await showDetail(result.id);
+      await UI.topics.refreshAndOpenFact(result.id);
       notify(
         result.merged
           ? "Повтор объединён с существующим знанием"
@@ -460,7 +513,7 @@
       $("knowledge-extract-error").textContent =
         "Обработано знаний: " + result.facts.length;
       $("knowledge-status-filter").value = "all";
-      await load();
+      await UI.topics.load();
       notify(
         result.facts.length
           ? "Знания извлечены. Повторы объединены"
@@ -498,7 +551,9 @@
     if (
       document.hidden ||
       UI.state?.page !== "memory" ||
-      UI.state.tab !== "facts"
+      UI.state.tab !== "facts" ||
+      !UI.topics?.isOpen ||
+      UI.topics.activePanel !== "knowledge"
     )
       return;
     void api("/api/knowledge/extraction")
@@ -518,7 +573,12 @@
       .catch(() => {});
   }, 4000);
   document.addEventListener("amayori-chat-updated", () => {
-    if (UI.state?.tab === "facts") void load();
+    if (
+      UI.state?.tab === "facts" &&
+      UI.topics?.isOpen &&
+      UI.topics.activePanel === "knowledge"
+    )
+      void load();
   });
-  UI.knowledge = { load, showDetail };
+  UI.knowledge = { load, showDetail, closeDetail, refreshExtraction };
 })();

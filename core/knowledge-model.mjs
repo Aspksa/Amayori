@@ -1,4 +1,5 @@
 // Storage-independent knowledge rules. A conflicting claim never silently wins.
+import { canonicalTopic, topicMatches } from "./topic-model.mjs";
 export const kinds = [
   "general",
   "project",
@@ -45,7 +46,7 @@ export function cleanFact(value) {
     throw invalid("Тема должна содержать не больше 100 символов");
   if (value.kind !== undefined && !kinds.includes(value.kind))
     throw invalid("Неизвестный тип знания");
-  result.topic = value.topic?.trim() || "Без темы";
+  result.topic = canonicalTopic(value.topic?.trim() || "Без темы");
   result.kind = value.kind || "general";
   // Only explicitly single-valued properties are competing versions. Hobbies,
   // members of a project, etc. are additive and may have several values.
@@ -124,7 +125,13 @@ export function upsertFacts(facts, inputs, { source, now, allocateId }) {
     if (same) {
       addSources(same, [source]);
       if (source.kind === "user-confirmed") same.source = "user-confirmed";
-      if (input.topic !== "Без темы") {
+      if (
+        input.topic !== "Без темы" &&
+        !(
+          source.kind === "cloudru-extracted" &&
+          same.events.some((event) => event.type === "topic-assigned")
+        )
+      ) {
         same.topics = uniqueTopics([...same.topics, input.topic]);
         if (same.topic === "Без темы") same.topic = input.topic;
       }
@@ -340,7 +347,7 @@ export function listFacts(
       (f) =>
         (status === "all" || f.status === status) &&
         (!kind || f.kind === kind) &&
-        (!topicKey || f.topics.some((t) => key(t) === topicKey)) &&
+        (!topicKey || f.topics.some((t) => topicMatches(t, topic))) &&
         (!query ||
           key(
             [f.subject, f.predicate, f.object, ...f.topics].join(" "),

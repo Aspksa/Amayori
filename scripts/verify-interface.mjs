@@ -8,11 +8,23 @@ import { spawn } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
+import {
+  groupConversations,
+  listConversations,
+  conversationPage,
+} from "../core/conversations.mjs";
+import { buildTopicOverview } from "../core/topic-overview.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const temp = await fs.mkdtemp(path.join(os.tmpdir(), "amayori-interface-"));
 let browser, server;
 const checks = [];
+function check(message) { checks.push(message); console.log("✓ " + message); }
+async function browserContext(options) {
+  const context = await browser.newContext(options);
+  context.setDefaultTimeout(30000);
+  return context;
+}
 try {
   for (const name of ["public", "core", "server.mjs", "package.json"])
     await fs.cp(path.join(root, name), path.join(temp, name), {
@@ -60,7 +72,7 @@ try {
     args,
     executablePath: process.env.AMAYORI_UI_BROWSER_EXECUTABLE || undefined,
   });
-  const context = await browser.newContext({
+  const context = await browserContext({
     viewport: { width: 1440, height: 950 },
     timezoneId: "Asia/Vladivostok",
   });
@@ -73,7 +85,7 @@ try {
   assert.equal(await page.locator("#chat-avatar").isVisible(), false);
   assert.equal(await page.locator("#chat-connection-hint").isVisible(), true);
   assert.equal(await page.locator("#golem-webgl").count(), 0);
-  checks.push(
+  check(
     "Empty local mode has one chat, a connection hint and no embedded Golem",
   );
 
@@ -122,6 +134,10 @@ try {
       predicate: "стиль",
       object: "Природный",
       source: "user-confirmed",
+      topic: "Сад",
+      topics: ["Сад"],
+      status: "active",
+      sources: [],
     },
     {
       id: 2,
@@ -129,6 +145,10 @@ try {
       predicate: "зона",
       object: "Отдых",
       source: "cloudru-extracted",
+      topic: "Сад",
+      topics: ["Сад"],
+      status: "active",
+      sources: [],
     },
   ];
   let settings = { model: "test-model", hasKey: true },
@@ -228,7 +248,21 @@ try {
         total: 0,
         source: semanticScenario ? "postgresql" : "postgresql-unavailable",
       };
-    else if (p === "/api/knowledge/facts") data = { facts };
+    else if (p === "/api/knowledge/folders")
+      data = buildTopicOverview(facts, []);
+    else if (p === "/api/conversations/grouped")
+      data = listConversations(
+        groupConversations(messages),
+        Object.fromEntries(url.searchParams),
+      );
+    else if (p === "/api/conversations/item")
+      data = conversationPage(
+        groupConversations(messages),
+        url.searchParams.get("id"),
+        Object.fromEntries(url.searchParams),
+      );
+    else if (p === "/api/knowledge/facts")
+      data = { facts, topics: ["Сад"], total: facts.length };
     else if (p === "/api/knowledge/card")
       data = {
         ...facts.find((f) => String(f.id) === url.searchParams.get("id")),
@@ -332,7 +366,7 @@ try {
   assert.equal(await page.evaluate(() => window.injected), undefined);
   assert.equal(await page.locator(".code-block").count(), 1);
   assert.equal(await page.locator(".message-body strong").count(), 1);
-  checks.push(
+  check(
     "Model choices are unique; message HTML is escaped; code and emphasis render safely",
   );
 
@@ -369,7 +403,7 @@ try {
       .locator("#chat-input")
       .evaluate((el) => el.getBoundingClientRect().height)) > 65,
   );
-  checks.push(
+  check(
     "Double submit is blocked, search highlights matches, composer grows with the draft",
   );
 
@@ -386,31 +420,13 @@ try {
   await page.keyboard.press("Escape");
   assert.equal(await page.locator("#floating-chat").isVisible(), false);
   await page.locator("#archive-search").fill("сад");
-  // Search is debounced and answered by the server now.
-  await page.waitForFunction(
-    () => document.querySelectorAll("#archive-list mark").length > 0,
-  );
+  await page.locator("#archive-list mark").first().waitFor();
   await page.locator("#archive-search").fill("");
   await page.waitForFunction(
     () => document.querySelectorAll("#archive-list mark").length === 0,
   );
   // Conversations, paging and forgetting: the archive used to stop at a hundred
   // messages and nothing could ever be deleted.
-  const beforeForget = await page.locator("#archive-list .archive-item").count();
-  assert.ok(beforeForget > 0, "архив показывает сообщения");
-  const forget = page.locator("#archive-list .archive-item .archive-forget").first();
-  await forget.click();
-  await page.waitForFunction(
-    () => /Удалить\?/.test(document.querySelector("#archive-list .archive-forget")?.textContent || ""),
-  );
-  await forget.click();
-  await page.waitForFunction(
-    (count) => document.querySelectorAll("#archive-list .archive-item").length === count - 1,
-    beforeForget,
-  );
-  assert.equal(deleted.length, 1, "удаление ушло на сервер");
-  assert.ok(deleted[0] && deleted[0] !== "undefined", "сервер получил идентификатор сообщения");
-  checks.push("Архив ищет на сервере, листается и умеет забывать сообщение");
   const archiveText = await page
     .locator("#archive-list")
     .evaluate((list) => list.textContent);
@@ -420,14 +436,30 @@ try {
     "archive previews show text, not Markdown markers",
   );
   await page.locator("#archive-list .archive-item").first().click();
-  await page.waitForURL("**/#chat");
-  await page.waitForFunction(
-    () => document.documentElement.dataset.page === "chat",
+  await page
+    .locator("#topic-conversation-messages .conversation-message")
+    .first()
+    .waitFor();
+  assert.equal(await page.locator("#topic-window").isVisible(), true);
+  assert.equal(
+    await page.evaluate(() => document.documentElement.dataset.page),
+    "memory",
   );
-  assert.equal(await page.locator("#floating-chat.floating").count(), 0);
-  assert.equal(await page.locator("#chat-avatar").isVisible(), false);
+  const beforeForget = await page.locator("#topic-conversation-messages .conversation-message").count();
+  const forget = page.locator("#topic-conversation-messages .archive-forget").last();
+  await forget.click();
+  assert.equal(await forget.textContent(), "Удалить?");
+  await forget.click();
+  await page.waitForFunction(
+    (count) => document.querySelectorAll("#topic-conversation-messages .conversation-message").length === count - 1,
+    beforeForget,
+  );
+  assert.equal(deleted.length, 1, "удаление ушло на сервер");
+  assert.ok(deleted[0] && deleted[0] !== "undefined", "сервер получил идентификатор сообщения");
+  check("Архив ищет целиком; сообщение можно явно забыть внутри беседы");
+  await page.locator("#topic-window-close").click();
   assert.equal(await page.locator("#chat-input").inputValue(), draft);
-  checks.push(
+  check(
     "Avatar reuses the same conversation; draft survives navigation, floating mode and expansion",
   );
 
@@ -450,22 +482,24 @@ try {
     await page.locator("#golem-selected").textContent(),
     "Выберите узел",
   );
-  checks.push(
+  check(
     "Local knowledge graph supports search, reset and keyboard selection",
   );
 
   await page.locator("a.nav-link[data-page=memory]").click();
   await page.locator("#tab-facts").click();
+  await page.locator(".topic-folder").first().click();
   await page.waitForSelector(".fact-card");
-  await page.locator(".fact-card .text-button").first().click();
+  await page.locator(".fact-card .fact-open").first().click();
   await page.waitForSelector(".fact-related");
+  await page.locator("#topic-window-close").click();
   await page.locator("#tab-quality").click();
   await page.waitForSelector(".quality-card");
   assert.deepEqual(
     await page.locator(".quality-card>strong").allTextContents(),
     ["1", "0", "1"],
   );
-  checks.push(
+  check(
     "Facts, related knowledge and quality reports display readable results",
   );
 
@@ -508,7 +542,7 @@ try {
     "true",
   );
   assert.equal(await page.locator("html").getAttribute("data-motion"), "false");
-  checks.push(
+  check(
     "Connection and brain forms work; secrets clear after saving; appearance preferences persist",
   );
 
@@ -615,9 +649,9 @@ try {
   await popup.waitForFunction(() =>
     document.getElementById("notice").textContent.includes("Пересобираю"),
   );
-  checks.push("Голем подписан на поток активности и реагирует на события");
+  check("Голем подписан на поток активности и реагирует на события");
   await popup.close();
-  checks.push(
+  check(
     "Golem opens separately without toolbar clutter and recovers from GPU context loss",
   );
 
@@ -699,7 +733,7 @@ try {
       assert.equal(metrics.views, 1, "only one section is visible");
     }
   }
-  checks.push(
+  check(
     "All 8 views/tabs fit 320, 390, 768, 1366, 1440 and 1920 px without whole-page scrolling",
   );
   await page.evaluate(() => {
@@ -723,10 +757,10 @@ try {
     archivedBefore,
     "clearing the screen does not delete the archive",
   );
-  checks.push(
+  check(
     "Export downloads a file; clearing the screen preserves the archive",
   );
-  const phoneContext = await browser.newContext({
+  const phoneContext = await browserContext({
     viewport: { width: 390, height: 844 },
     isMobile: true,
     hasTouch: true,
@@ -771,7 +805,7 @@ try {
       phoneBounds.x + phoneBounds.width <= 390 &&
       phoneBounds.y + phoneBounds.height <= 844,
   );
-  checks.push(
+  check(
     "Touch input preserves newlines; sending and avatar opening do not duplicate messages or dialogs",
   );
   await phone.locator('a.nav-link[data-page="graph"]').tap();
@@ -830,11 +864,11 @@ try {
       assert.equal(await page.locator("#graph-count").textContent(), "");
     }
   }
-  checks.push(
+  check(
     "Semantic matches, no-match messages and errors stay visible on an empty graph, including refresh and mobile layout",
   );
   semanticScenario = false;
-  const workContext = await browser.newContext({
+  const workContext = await browserContext({
     viewport: { width: 1440, height: 950 },
     timezoneId: "Asia/Vladivostok",
   });
@@ -892,7 +926,7 @@ try {
   await work.waitForFunction(
     (count) =>
       document.querySelectorAll("#archive-list .archive-item").length === count,
-    messages.length,
+    groupConversations(messages).length,
   );
   assert.equal(
     await work.locator("#chat-input").inputValue(),
@@ -907,10 +941,12 @@ try {
       !document.querySelector(".message.pending"),
     beforeSend + 2,
   );
+  await work.locator("#archive-list .archive-item").first().click();
   await work
-    .locator("#archive-list .archive-item")
+    .locator("#topic-conversation-messages .conversation-message")
     .filter({ hasText: "Совместная работа с архивом" })
-    .waitFor({ state: "visible" });
+    .waitFor();
+  await work.locator("#topic-window-close").click();
   assert.equal(
     await work
       .locator(".message.user")
@@ -951,9 +987,8 @@ try {
   assert.equal(await work.locator("#view-chat").isVisible(), true);
   await work.locator('a.nav-link[data-page="memory"]').click();
   await work.locator("#archive-list .archive-item").first().click();
-  await work.waitForFunction(
-    () => document.documentElement.dataset.page === "chat",
-  );
+  await work.locator("#topic-conversation-reader").waitFor();
+  await work.locator("#topic-window-close").click();
   assert.equal(
     await work.locator("#view-memory").isVisible(),
     true,
@@ -983,7 +1018,7 @@ try {
     await work.locator("#chat-input").inputValue(),
     "Сохранить при переходах",
   );
-  checks.push(
+  check(
     "Split workspace keeps one chat and its draft; archive updates beside replies and remains open when selecting messages",
   );
 
@@ -1011,7 +1046,7 @@ try {
     savedShare,
   );
   assert.equal(await work.locator("#floating-chat").count(), 1);
-  checks.push(
+  check(
     "Split side and pane sizes persist without changing full-screen settings and knowledge tabs",
   );
 
@@ -1098,7 +1133,7 @@ try {
     ["chat", "memory", "graph", "golem"],
   );
   assert.equal(await work.locator("#nav-more").isVisible(), false);
-  checks.push(
+  check(
     "Personal menu supports pinning, keyboard ordering, drag and drop, More navigation, persistence and reset without duplicate links",
   );
 
@@ -1176,11 +1211,11 @@ try {
       }
     }
   }
-  checks.push(
+  check(
     "Both split contexts fit desktop, tablet and small phones; map details remain usable within the pane",
   );
 
-  const splitPhoneContext = await browser.newContext({
+  const splitPhoneContext = await browserContext({
     viewport: { width: 390, height: 844 },
     isMobile: true,
     hasTouch: true,
@@ -1215,12 +1250,12 @@ try {
   await work.locator("#chat-input").waitFor();
   assert.equal(await work.locator("#workspace.workspace-split").count(), 0);
   assert.equal(await work.locator("#nav-pinned a").count(), 4);
-  checks.push(
+  check(
     "Touch split mode preserves multiline drafts; malformed saved preferences recover to the approved default layout",
   );
 
   // Exercise the knowledge UI against the real isolated local repository.
-  const knowledgeContext = await browser.newContext({
+  const knowledgeContext = await browserContext({
     viewport: { width: 1440, height: 950 },
     timezoneId: "Asia/Vladivostok",
   });
@@ -1236,6 +1271,8 @@ try {
       predicate = "тема интерфейса",
     } = {},
   ) {
+    if (await k.locator("#topic-window").isVisible())
+      await k.locator("#topic-window-close").click();
     await k.locator("#knowledge-add").click();
     const form = k.locator("#knowledge-add-form");
     await form.locator("[name=subject]").fill(subject);
@@ -1280,6 +1317,7 @@ try {
     .filter({ hasText: "Белая тема" })
     .waitFor();
   await k.reload();
+  await k.locator('.topic-folder[data-topic-path="Дизайн"]').click();
   await k.locator("#facts-list .fact-open").first().click();
   await k
     .locator("#knowledge-detail-content")
@@ -1338,7 +1376,11 @@ try {
     assert.equal(bounds.width, bounds.scroll, "knowledge detail fits " + width);
     assert.equal(bounds.top, 0);
     assert.ok(bounds.detail.height > 180);
-    await k.locator("#knowledge-detail-close").click();
+    const windowBounds = await k.locator("#topic-window").boundingBox();
+    assert.ok(
+      windowBounds.x >= 0 && windowBounds.x + windowBounds.width <= width + 1,
+    );
+    await k.locator("#topic-window-close").click();
     const add = k.locator("#knowledge-add");
     await add.click();
     const form = k.locator("#knowledge-add-dialog");
@@ -1346,13 +1388,14 @@ try {
     const dialog = await form.boundingBox();
     assert.ok(dialog.x >= 0 && dialog.x + dialog.width <= width + 1);
     await k.keyboard.press("Escape");
+    await k.locator('.topic-folder[data-topic-path="Дизайн"]').click();
     await selectedCard.locator(".fact-open").click();
     await k
       .locator("#knowledge-detail-content .knowledge-value")
       .filter({ hasText: "Белая тема проекта" })
       .waitFor();
   }
-  await k.locator("#knowledge-detail-close").click();
+  await k.locator("#topic-window-close").click();
   await Promise.all([
     k.waitForResponse(
       (r) =>
@@ -1373,8 +1416,231 @@ try {
     .filter({ hasText: "Выберите модель Cloud.ru" })
     .waitFor();
   await k.keyboard.press("Escape");
-  checks.push(
+  check(
     "Real local knowledge cards merge repeats, retain chosen versions and sources, filter by topic and safely render user content; desktop/mobile details and forms fit 320–1920 px",
+  );
+
+  // Seed only the isolated fixture: verify full source conversations outside the last 100 messages.
+  const oldMessages = Array.from({ length: 140 }, (_, i) => ({
+    id: "archive-" + i,
+    role: i % 2 ? "assistant" : "user",
+    content:
+      i === 0
+        ? "Старый разговор о дизайне"
+        : i === 120
+          ? 'Строка 120 <img src=x onerror="window.injected=true">'
+          : "Строка " + i,
+    at: new Date(Date.UTC(2026, 0, 1, 0, i)).toISOString(),
+  }));
+  oldMessages.push(
+    {
+      id: "recent-user",
+      role: "user",
+      content: "Новая отдельная беседа",
+      at: "2026-01-02T00:00:00Z",
+    },
+    {
+      id: "recent-answer",
+      role: "assistant",
+      content: "Новый ответ",
+      at: "2026-01-02T00:00:01Z",
+    },
+  );
+  await fs.writeFile(
+    path.join(temp, "data", "chats.json"),
+    JSON.stringify(oldMessages),
+  );
+  const known = JSON.parse(
+    await fs.readFile(path.join(temp, "data", "knowledge.json"), "utf8"),
+  );
+  const white = known.facts.find(
+    (f) => f.object === "Белая тема проекта" && f.status === "active",
+  );
+  white.sources.push({
+    kind: "cloudru-extracted",
+    messageId: "archive-120",
+    excerpt: oldMessages[120].content,
+    at: oldMessages[120].at,
+  });
+  await fs.writeFile(
+    path.join(temp, "data", "knowledge.json"),
+    JSON.stringify(known),
+  );
+  await delay(5100); // The production archive cache has a five-second freshness window.
+  await k.locator('a.nav-link[data-page="chat"]').click();
+  await k.locator("#chat-input").fill("Черновик остаётся в текущем чате");
+  await k.locator('a.nav-link[data-page="memory"]').click();
+  await k.locator("#tab-facts").click();
+  await k.locator('.topic-folder[data-topic-path="Дизайн"]').click();
+  await k.locator("#topic-tab-conversations").click();
+  await k.locator("#topic-conversation-list .conversation-item").waitFor();
+  assert.equal(
+    await k.locator("#topic-conversation-list .conversation-item").count(),
+    1,
+  );
+  await k.locator("#topic-conversation-list .conversation-item").click();
+  await k
+    .locator("#topic-conversation-messages .conversation-message")
+    .first()
+    .waitFor();
+  assert.equal(
+    await k
+      .locator("#topic-conversation-messages .conversation-message")
+      .count(),
+    50,
+  );
+  await k.locator("#topic-conversation-next").click();
+  await k.waitForFunction(() =>
+    document
+      .getElementById("topic-conversation-position")
+      .textContent.startsWith("51"),
+  );
+  await k.locator("#topic-conversation-next").click();
+  await k.waitForFunction(() =>
+    document
+      .getElementById("topic-conversation-position")
+      .textContent.startsWith("101"),
+  );
+  assert.equal(
+    await k
+      .locator("#topic-conversation-messages .conversation-message")
+      .count(),
+    40,
+  );
+  assert.equal(await k.locator("#topic-conversation-messages img").count(), 0);
+  await k.locator("#topic-tab-knowledge").click();
+  await k.locator("#facts-list .fact-open").first().click();
+  await k.getByRole("button", { name: "Открыть беседу", exact: true }).click();
+  await k.locator("#topic-conversation-messages .is-source").waitFor();
+  assert.equal(
+    await k
+      .locator("#topic-conversation-messages .is-source")
+      .getAttribute("data-message-id"),
+    "archive-120",
+  );
+  assert.equal(
+    await k.evaluate(() => document.documentElement.dataset.page),
+    "memory",
+  );
+  assert.equal(
+    await k.locator("#chat-input").inputValue(),
+    "Черновик остаётся в текущем чате",
+  );
+  assert.equal(await k.locator("dialog[open]").count(), 1);
+  for (const width of [320, 390, 768, 1366]) {
+    await k.setViewportSize({ width, height: 844 });
+    const rect = await k.locator("#topic-window").boundingBox();
+    assert.ok(
+      rect.x >= 0 &&
+        rect.x + rect.width <= width + 1 &&
+        rect.y >= 0 &&
+        rect.y + rect.height <= 845,
+      "conversation window fits " + width,
+    );
+    const scroll = await k.evaluate(() => ({
+      width: document.documentElement.clientWidth,
+      scroll: document.documentElement.scrollWidth,
+    }));
+    assert.equal(scroll.width, scroll.scroll);
+  }
+  await k.locator("#topic-window-close").click();
+  await k.locator("#tab-archive").click();
+  await k.waitForFunction(
+    () =>
+      document.querySelectorAll("#archive-list .conversation-item").length ===
+      2,
+  );
+  await k.locator("#archive-search").fill("Строка 120");
+  await k.waitForFunction(
+    () =>
+      document.querySelectorAll("#archive-list .conversation-item").length ===
+      1,
+  );
+  await k.locator("#archive-list .conversation-item").click();
+  await k.locator("#topic-conversation-messages .is-source").waitFor();
+  assert.equal(
+    await k
+      .locator("#topic-conversation-messages .is-source")
+      .getAttribute("data-message-id"),
+    "archive-120",
+  );
+  await k.locator("#topic-window-close").click();
+  check(
+    "Topic folders show one row per conversation; old messages page completely, search and evidence open the exact message in the same centered window without changing the current chat or its draft",
+  );
+
+  // Attention markers and topic cleanup act on real persisted knowledge.
+  await k.setViewportSize({ width: 1440, height: 950 });
+  for (const body of [
+    {
+      subject: "Amayori",
+      predicate: "меню",
+      object: "SVG",
+      topic: "Amayori / Дизайн",
+    },
+    {
+      subject: "Amayori",
+      predicate: "оформление",
+      object: "Золото",
+      topic: "Amayori / Внешний вид",
+    },
+  ])
+    assert.equal(
+      (
+        await k.request.post(base + "/api/knowledge/facts", { data: body })
+      ).status(),
+      200,
+    );
+  await k.locator("#tab-facts").click();
+  const rootFolder = k.locator('.topic-folder[data-topic-path="Amayori"]');
+  await rootFolder.locator(".topic-attention-marker").waitFor();
+  await rootFolder.click();
+  assert.equal(await k.locator("#topic-children button").count(), 2);
+  await k.locator("#topic-tab-attention").click();
+  await k.locator(".topic-issue .button").click();
+  await k.waitForFunction(
+    () => document.querySelectorAll("#topic-children button").length === 1,
+  );
+  const merged = (
+    await (await k.request.get(base + "/api/knowledge/folders")).json()
+  ).folders;
+  assert.equal(
+    merged.some((f) => f.path === "Amayori / Дизайн"),
+    false,
+  );
+  assert.equal(
+    merged.some((f) => f.path === "Amayori / Внешний вид"),
+    true,
+  );
+  await k.locator("#topic-window-close").click();
+  for (const object of ["Тёмная", "Светлая"])
+    assert.equal(
+      (
+        await k.request.post(base + "/api/knowledge/facts", {
+          data: {
+            subject: "Amayori",
+            predicate: "тема",
+            object,
+            topic: "Amayori / Внешний вид",
+            exclusive: true,
+          },
+        })
+      ).status(),
+      200,
+    );
+  await k.reload();
+  await rootFolder.locator(".topic-attention-marker").waitFor();
+  await rootFolder.click();
+  await k.locator("#topic-tab-attention").click();
+  await k.getByRole("button", { name: "Открыть знание", exact: true }).click();
+  await k
+    .getByRole("button", { name: "Сделать актуальным", exact: true })
+    .click();
+  await k.locator("#topic-tab-attention").waitFor({ state: "hidden" });
+  await k.locator("#topic-window-close").click();
+  assert.equal(await rootFolder.locator(".topic-attention-marker").count(), 0);
+  check(
+    "Folder badges reflect actual issues; related topic names merge with source preservation and disappear after resolution, while one-window navigation remains usable",
   );
 
   assert.deepEqual(errors, [], "no browser JavaScript errors");

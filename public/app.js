@@ -19,14 +19,7 @@
     messages: 0,
     database: false,
   });
-  const ARCHIVE_PAGE = 50;
-  let archive = [],
-    archiveTotal = 0,
-    archiveOffset = 0,
-    archiveQuery = "",
-    archiveTimer = null,
-    archiveLoaded = false,
-    modelRequest = null;
+  let modelRequest = null;
   UI.isViewVisible = (page) =>
     (state.visiblePages || [state.page]).includes(page);
   function renderWorkspace(page, tab, rememberContext = false) {
@@ -323,156 +316,11 @@
           : "Работает локальный архив";
     } else $("database-state").textContent = "Состояние базы недоступно";
   }
-  // The archive used to stop at the last hundred messages and search only those.
-  async function loadArchive({older = false} = {}) {
-    try {
-      if (!older) {
-        archiveOffset = 0;
-        archive = [];
-      }
-      const params = new URLSearchParams({
-        limit: String(ARCHIVE_PAGE),
-        offset: String(archiveOffset),
-      });
-      if (archiveQuery) params.set("q", archiveQuery);
-      const data = await api("/api/chats?" + params.toString());
-      const page = Array.isArray(data.messages) ? data.messages : [];
-      archive = older ? [...page, ...archive] : page;
-      archiveTotal = Number.isFinite(Number(data.total))
-        ? Number(data.total)
-        : archive.length;
-      archiveLoaded = true;
-      renderArchive();
-    } catch (error) {
-      $("archive-list").replaceChildren(
-        empty("Не удалось открыть архив", error.message),
-      );
-    }
+  async function loadArchive() {
+    return UI.topics.loadArchive();
   }
-  async function forgetMessage(id) {
-    const result = await api("/api/chats?id=" + encodeURIComponent(id), {
-      method: "DELETE",
-    });
-    archive = archive.filter((item) => String(item.id) !== String(id));
-    archiveTotal = Math.max(0, archiveTotal - (result.messages || 1));
-    renderArchive();
-    void refreshMemory();
-    notify(
-      result.facts
-        ? "Сообщение удалено, забыто знаний: " + result.facts
-        : "Сообщение удалено",
-    );
-  }
-  function renderArchive() {
-    const query = archiveQuery;
-    const items = archive;
-    const list = $("archive-list");
-    list.replaceChildren();
-    $("archive-summary").textContent = query
-      ? "Найдено: " + archiveTotal + (archiveTotal > items.length ? " · показано " + items.length : "")
-      : archiveTotal > items.length
-        ? "Показано " + items.length + " из " + archiveTotal
-        : "";
-    if (!items.length) {
-      list.append(
-        empty(
-          query ? "Ничего не найдено" : "Здесь будет ваша история",
-          query
-            ? "Попробуйте другое слово."
-            : "Начните диалог — переписка сохранится в архиве.",
-        ),
-      );
-      return;
-    }
-    if (archive.length < archiveTotal) {
-      const more = document.createElement("button");
-      more.type = "button";
-      more.className = "button subtle archive-more";
-      more.textContent = "Показать более ранние";
-      more.addEventListener("click", () => {
-        more.disabled = true;
-        archiveOffset += ARCHIVE_PAGE;
-        void loadArchive({older: true});
-      });
-      list.append(more);
-    }
-    for (const item of [...items].reverse()) {
-      const row = document.createElement("div");
-      row.setAttribute("role", "button");
-      row.tabIndex = 0;
-      row.className = "archive-item " + item.role;
-      const role = document.createElement("span");
-      role.className = "archive-role";
-      role.innerHTML = item.role === "assistant" ? icon("fox") : icon("note");
-      const content = document.createElement("span");
-      content.className = "archive-text";
-      const text = document.createElement("p"),
-        meta = document.createElement("small");
-      text.append(mark(preview(item.content), query));
-      meta.textContent =
-        (item.role === "user" ? "Вы" : "Ответ") +
-        (date(item.at) ? " · " + date(item.at) : "");
-      content.append(text, meta);
-      row.append(role, content);
-      const chevron = document.createElement("span");
-      chevron.className = "archive-chevron";
-      chevron.innerHTML = icon("chevron");
-      row.append(chevron);
-      const forget = document.createElement("button");
-      forget.type = "button";
-      forget.className = "icon-button archive-forget";
-      forget.innerHTML = icon("close");
-      forget.title = "Удалить сообщение";
-      forget.setAttribute("aria-label", "Удалить сообщение");
-      let armed = false;
-      forget.addEventListener("click", async (event) => {
-        // Deleting is irreversible, so the second press is the confirmation.
-        event.stopPropagation();
-        if (!armed) {
-          armed = true;
-          forget.classList.add("armed");
-          forget.replaceChildren(document.createTextNode("Удалить?"));
-          setTimeout(() => {
-            if (!armed) return;
-            armed = false;
-            forget.classList.remove("armed");
-            forget.innerHTML = icon("close");
-          }, 4000);
-          return;
-        }
-        forget.disabled = true;
-        try {
-          await forgetMessage(item.id);
-        } catch (error) {
-          forget.disabled = false;
-          notify(error.message, "error");
-        }
-      });
-      row.append(forget);
-      const open = () => {
-        UI.navigate("chat");
-        window.AmayoriChat?.openMessage(item.content);
-      };
-      row.addEventListener("click", open);
-      row.addEventListener("keydown", (event) => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          open();
-        }
-      });
-      list.append(row);
-    }
-  }
-  $("archive-search").addEventListener("input", () => {
-    // Search now runs over the whole archive, so it is debounced.
-    clearTimeout(archiveTimer);
-    archiveTimer = setTimeout(() => {
-      archiveQuery = $("archive-search").value.trim();
-      void loadArchive();
-    }, 220);
-  });
   async function loadFacts() {
-    return UI.knowledge.load();
+    return UI.topics.load();
   }
   function qualityDetails(title, rows, format) {
     const details = document.createElement("details");

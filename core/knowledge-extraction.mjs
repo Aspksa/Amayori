@@ -70,10 +70,11 @@ export function createExtractionService({
       });
       emit("knowledge-extraction", { state: "running" });
       try {
-        const existing = (
-          await repository.list({ status: "active", limit: 15 })
-        ).facts;
-        const facts = await extract(config, pending.text, { existing });
+        const context = await repository.list({ status: "active", limit: 15 });
+        const facts = await extract(config, pending.text, {
+          existing: context.facts,
+          existingTopics: context.topics || [],
+        });
         const saved = await repository.save(facts, {
           kind: "cloudru-extracted",
           messageId: pending.id,
@@ -196,6 +197,26 @@ export function createExtractionService({
         .filter((m) => m.role === "user")
         .slice(-10);
       return this.enqueue(messages, { retry: true, manual: true });
+    },
+    async problemMessages() {
+      await chain;
+      await init();
+      return data.jobs
+        .filter((job) => job.status === "error")
+        .map((job) => String(job.id));
+    },
+    async completeMessage(id, count) {
+      await change(() => {
+        const job = data.jobs.find((job) => job.id === String(id));
+        if (job && job.status === "error") {
+          job.status = "done";
+          job.count = count;
+          job.text = "";
+          data.lastRun = new Date().toISOString();
+          if (!data.jobs.some((job) => job.status === "error"))
+            data.lastError = "";
+        }
+      });
     },
     async resume() {
       kick();
