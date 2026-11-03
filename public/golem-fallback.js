@@ -56,10 +56,30 @@ function draw(now) {
     ctx.strokeStyle = 'rgba(212,170,96,.22)';
     ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
   }
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
   for (let i = 0; i < n; i++) {
     const p = positions[i], size = (1.3 + (p.z + 1) * 1.2) * preferences.nodeSize / 2;
-    ctx.fillStyle = i < graph.nodes.length ? '#e6ba72' : 'rgba(158,144,116,.55)';
-    ctx.beginPath(); ctx.arc(p.x, p.y, size, 0, Math.PI * 2); ctx.fill();
+    const live = i < graph.nodes.length;
+    const pulse = reduced ? 1 : 1 + Math.sin(now * .0013 + i * 2.39996) * .09;
+    const r = size * pulse * (live ? 2.2 : 1.4);
+    if (live && i % 3 === 0) {
+      const halo = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r * 3);
+      halo.addColorStop(0, 'rgba(255,243,205,.32)');
+      halo.addColorStop(.2, 'rgba(244,192,110,.14)');
+      halo.addColorStop(1, 'rgba(244,192,110,0)');
+      ctx.fillStyle = halo;
+      ctx.fillRect(p.x-r*3, p.y-r*3, r*6, r*6);
+    }
+    ctx.fillStyle = live ? (i % 5 === 0 ? '#fff8e5' : i % 3 === 0 ? '#f5d4a0' : '#d6b778') : 'rgba(158,144,116,.48)';
+    ctx.beginPath();
+    for (let tip = 0; tip < 16; tip++) {
+      const angle = -Math.PI / 2 + tip * Math.PI / 8;
+      const extent = tip % 2 ? .17 : tip % 4 === 0 ? 1 : .56;
+      const x = p.x + Math.cos(angle) * r * extent;
+      const y = p.y + Math.sin(angle) * r * extent;
+      if (!tip) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.closePath(); ctx.fill();
   }
   if (preferences.autoRotate && !matchMedia('(prefers-reduced-motion: reduce)').matches) angle += elapsed * .000084;
 }
