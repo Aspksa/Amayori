@@ -6,6 +6,10 @@ const detail = document.getElementById('detail');
 const body = document.getElementById('detail-body');
 const notice = document.getElementById('notice');
 const legend = document.getElementById('legend');
+const labelLayer = document.getElementById('sky-labels');
+const searchBar = document.getElementById('sky-search');
+const searchInput = document.getElementById('sky-query');
+const searchCount = document.getElementById('sky-count');
 
 let renderer;
 try {
@@ -164,6 +168,10 @@ let activeFactIds = new Set(), flaring = new Set();
 let selected = null, loading = false, lastFingerprint = '', contextLost = false;
 let frameAverage = 16.7, lastHeartbeat = -Infinity, previousTraceId = null;
 let activity = 0, lastSignal = 0, signals = [];
+// The sky had no controls at all: a star could only be found by chance.
+let matches = [], cursor = -1, isolated = -1, labelDue = 0;
+const labelNodes = [];
+const projected = new THREE.Vector3();
 
 const matrix = new THREE.Matrix4();
 const tint = new THREE.Color();
@@ -360,6 +368,8 @@ function paintStars() {
       tint.lerp(new THREE.Color(0xfffdf4), heat * 0.8).multiplyScalar(0.5 + heat * 0.7);
     }
     if (flaring.has(i)) tint.setHex(FLARE);
+    if (i === cursor) tint.setHex(0xffffff);
+    tint.multiplyScalar(brightness(i));
     starMesh.setColorAt(i, tint);
     glowTone[i * 3] = tint.r; glowTone[i * 3 + 1] = tint.g; glowTone[i * 3 + 2] = tint.b;
   }
@@ -369,7 +379,8 @@ function paintStars() {
     const link = links[e], offset = e * 6;
     const region = regions[link.region];
     const lit = flaring.has(link.a) && flaring.has(link.b);
-    tint.setHex(lit ? FLARE : region ? region.tone : STAR_TONES[0]).multiplyScalar(lit ? 1 : 0.3);
+    tint.setHex(lit ? FLARE : region ? region.tone : STAR_TONES[0])
+      .multiplyScalar((lit ? 1 : 0.3) * Math.min(brightness(link.a), brightness(link.b)));
     for (let v = 0; v < 2; v++) {
       linkTone[offset + v * 3] = tint.r;
       linkTone[offset + v * 3 + 1] = tint.g;
@@ -399,6 +410,15 @@ function renderLegend(count) {
   for (const region of regions.slice(0, 5)) {
     const row = document.createElement('p');
     row.className = 'legend-row';
+    const place = regions.indexOf(region);
+    row.dataset.region = String(place);
+    row.setAttribute('role', 'button');
+    row.tabIndex = 0;
+    row.title = 'Показать только это созвездие';
+    row.addEventListener('click', () => isolate(place));
+    row.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); isolate(place); }
+    });
     const swatch = document.createElement('span');
     swatch.className = 'legend-swatch';
     swatch.style.background = '#' + region.tone.toString(16).padStart(6, '0');
@@ -483,9 +503,11 @@ function populate(data) {
   });
   if (planetMesh.instanceColor) planetMesh.instanceColor.needsUpdate = true;
 
+  if (isolated >= regions.length) isolated = -1;
+  cursor = -1;
   uploadStars();
   uploadFigures();
-  paintStars();
+  applySearch(searchInput.value);
   renderLegend(stars.length);
   fitCamera();
 }
@@ -518,6 +540,61 @@ function updateCamera() {
   );
   camera.lookAt(orbit.target);
   camera.updateMatrixWorld();
+}
+
+function brightness(index) {
+  if (isolated >= 0 && regionOf[index] !== isolated) return 0.16;
+  if (matches.length && !matches.includes(index)) return 0.26;
+  return 1;
+}
+
+// Names are drawn as plain DOM over the canvas: crisp text, no glyph atlas, and
+// it inherits the interface font.
+function updateLabels(now) {
+  if (now - labelDue < 90) return;
+  labelDue = now;
+  if (empty || !stars.length) {
+    for (const node of labelNodes) node.style.display = 'none';
+    return;
+  }
+  const wanted = new Set();
+  if (matches.length) for (const index of matches.slice(0, 12)) wanted.add(index);
+  if (cursor >= 0) wanted.add(cursor);
+  for (const index of flaring) wanted.add(index);
+  if (wanted.size < 14) {
+    const ranked = Array.from({length: stars.length}, (_, i) => i)
+      .filter((i) => isolated < 0 || regionOf[i] === isolated)
+      .sort((a, b) => degree[b] - degree[a] || a - b);
+    for (const index of ranked) {
+      if (wanted.size >= 14) break;
+      wanted.add(index);
+    }
+  }
+  const half = innerWidth / 2, middle = innerHeight / 2;
+  const shown = [...wanted];
+  for (let slot = 0; slot < Math.max(labelNodes.length, shown.length); slot++) {
+    let node = labelNodes[slot];
+    if (!node && slot < shown.length) {
+      node = document.createElement('span');
+      node.className = 'sky-label';
+      labelLayer.append(node);
+      labelNodes.push(node);
+    }
+    if (!node) continue;
+    const index = shown[slot];
+    if (index === undefined) { node.style.display = 'none'; continue; }
+    projected.set(starPos[index * 3], starPos[index * 3 + 1], starPos[index * 3 + 2]);
+    galaxy.localToWorld(projected);
+    projected.project(camera);
+    if (projected.z > 1 || projected.z < -1) { node.style.display = 'none'; continue; }
+    const depth = Math.max(0, Math.min(1, 1 - (projected.z + 1) / 2));
+    node.textContent = stars[index].label;
+    node.classList.toggle('lit', flaring.has(index) || index === cursor);
+    node.style.display = '';
+    node.style.left = (projected.x * half + half) + 'px';
+    node.style.top = (-projected.y * middle + middle) + 'px';
+    node.style.opacity = String(0.3 + depth * 0.6);
+  }
 }
 
 function draw() {
@@ -591,9 +668,13 @@ function inspect(index) {
       const row = document.createElement('li');
       const partner = stars[planet.star === index ? planet.other : planet.star];
       row.textContent = planet.label + (partner ? ' — ' + partner.label : '');
+      row.dataset.fact = planet.id;
       list.append(row);
     }
     body.append(title, list);
+    // Where the knowledge came from: /api/golem/source existed but the sky never
+    // asked it, so a star could not be traced back to the message behind it.
+    void describeSources(list, own.slice(0, 4), star.id);
   }
   userFramed = true;
   want.target.set(starPos[index * 3], starPos[index * 3 + 1], starPos[index * 3 + 2]);
@@ -601,9 +682,93 @@ function inspect(index) {
   detail.hidden = false;
 }
 
+function applySearch(raw) {
+  const query = String(raw || '').trim().toLocaleLowerCase('ru');
+  matches = query
+    ? stars.map((star, index) => [star, index])
+        .filter(([star]) => star.label.toLocaleLowerCase('ru').includes(query))
+        .map(([, index]) => index)
+    : [];
+  cursor = matches.length ? matches[0] : -1;
+  searchCount.textContent = query ? (matches.length ? '1 / ' + matches.length : 'нет') : '';
+  paintStars();
+  labelDue = 0;
+}
+function showSearch(open) {
+  searchBar.hidden = !open;
+  if (open) searchInput.focus();
+  else {
+    searchInput.value = '';
+    applySearch('');
+    searchInput.blur();
+  }
+}
+function focusStar(index) {
+  if (index == null || index < 0 || index >= stars.length) return;
+  cursor = index;
+  if (matches.length) {
+    const at = matches.indexOf(index);
+    if (at >= 0) searchCount.textContent = at + 1 + ' / ' + matches.length;
+  }
+  userFramed = true;
+  want.target.set(starPos[index * 3], starPos[index * 3 + 1], starPos[index * 3 + 2]);
+  want.dist = Math.max(70, Math.min(want.dist, 220));
+  labelDue = 0;
+}
+function step(delta) {
+  if (!stars.length) return;
+  const pool = matches.length
+    ? matches
+    : Array.from({length: stars.length}, (_, i) => i)
+        .filter((i) => isolated < 0 || regionOf[i] === isolated)
+        .sort((a, b) => degree[b] - degree[a] || a - b);
+  if (!pool.length) return;
+  const at = pool.indexOf(cursor);
+  focusStar(pool[(at + delta + pool.length) % pool.length]);
+}
+function isolate(index) {
+  isolated = isolated === index ? -1 : index;
+  for (const row of legend.querySelectorAll('.legend-row'))
+    row.classList.toggle('isolated', Number(row.dataset.region) === isolated);
+  paintStars();
+  labelDue = 0;
+}
+
+searchInput.addEventListener('input', () => applySearch(searchInput.value));
+searchInput.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter') { event.preventDefault(); if (cursor >= 0) inspect(cursor); }
+  else if (event.key === 'ArrowDown') { event.preventDefault(); step(1); }
+  else if (event.key === 'ArrowUp') { event.preventDefault(); step(-1); }
+  else if (event.key === 'Escape') { event.preventDefault(); showSearch(false); }
+});
+
+async function describeSources(list, planets, owner) {
+  for (const planet of planets) {
+    if (selected !== owner) return;
+    let source;
+    try {
+      const response = await fetch('/api/golem/source?id=' + encodeURIComponent(planet.id));
+      if (!response.ok) continue;
+      source = await response.json();
+    } catch { continue; }
+    if (selected !== owner) return;
+    const row = list.querySelector('[data-fact="' + CSS.escape(planet.id) + '"]');
+    if (!row) continue;
+    const note = document.createElement('small');
+    const kind = source.source === 'user-confirmed' ? 'подтверждено вами'
+      : source.source === 'cloudru-extracted' ? 'извлечено моделью' : 'из памяти';
+    const excerpt = source.message && typeof source.message.content === 'string'
+      ? source.message.content.replace(/\s+/g, ' ').slice(0, 140)
+      : '';
+    note.textContent = kind + (excerpt ? ' · «' + excerpt + '»' : '');
+    row.append(document.createElement('br'), note);
+  }
+}
+
 function release() {
   detail.hidden = true;
   selected = null;
+  cursor = -1;
   want.target.set(0, 0, 0);
   userFramed = false;
   fitCamera();
@@ -645,7 +810,17 @@ canvas.addEventListener('wheel', (event) => {
   want.dist = Math.max(60, Math.min(2600, want.dist * (event.deltaY > 0 ? 1.12 : 0.89)));
 }, {passive: false});
 document.getElementById('close-detail').addEventListener('click', release);
-addEventListener('keydown', (event) => { if (event.key === 'Escape') release(); });
+addEventListener('keydown', (event) => {
+  if (event.target === searchInput) return;
+  if (event.key === 'Escape') {
+    if (!searchBar.hidden) showSearch(false);
+    else if (isolated >= 0) isolate(isolated);
+    else release();
+  } else if (event.key === '/') { event.preventDefault(); showSearch(true); }
+  else if (event.key === 'ArrowRight' || event.key === 'ArrowDown') { event.preventDefault(); step(1); }
+  else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') { event.preventDefault(); step(-1); }
+  else if (event.key === 'Enter' && cursor >= 0) { event.preventDefault(); inspect(cursor); }
+});
 
 function flareFacts(ids) {
   activeFactIds = new Set((ids || []).map(String));
@@ -851,5 +1026,6 @@ function animate(now) {
   if (planets.length) orbitPlanets(now);
   updateSignals(delta);
   draw();
+  updateLabels(now);
 }
 requestAnimationFrame(animate);
