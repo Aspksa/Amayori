@@ -206,7 +206,7 @@ export function createExtractionService({
         .map((job) => String(job.id));
     },
     async completeMessage(id, count) {
-      await change(() => {
+      const completed = await change(() => {
         const job = data.jobs.find((job) => job.id === String(id));
         if (job && job.status === "error") {
           job.status = "done";
@@ -215,8 +215,11 @@ export function createExtractionService({
           data.lastRun = new Date().toISOString();
           if (!data.jobs.some((job) => job.status === "error"))
             data.lastError = "";
+          return true;
         }
+        return false;
       });
+      if (completed && data.enabled && !forcedOff()) kick();
     },
     async resume() {
       kick();

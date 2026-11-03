@@ -1643,6 +1643,36 @@ try {
     "Folder badges reflect actual issues; related topic names merge with source preservation and disappear after resolution, while one-window navigation remains usable",
   );
 
+  // Keep a delayed retry pending across the same refresh used by the eight-second poll.
+  let retryCalls = 0, releaseRetry;
+  const retryGate = new Promise(resolve => { releaseRetry = resolve; });
+  const retryFolder = {path:"Проверка",name:"Проверка",count:1,active:1,conversations:1,attention:1,children:[],issues:[{type:"extraction",label:"Ошибка разбора",messageId:"retry-message"}]};
+  await k.route("**/api/knowledge/folders", route => route.fulfill({json:{folders:[retryFolder],roots:["Проверка"],total:1}}));
+  await k.route("**/api/knowledge/extract", async route => {
+    retryCalls++;
+    await retryGate;
+    await route.fulfill({status:503,json:{error:"Повторите позже"}});
+  });
+  await k.evaluate(() => window.AmayoriUI.topics.load());
+  await k.locator('.topic-folder[data-topic-path="Проверка"]').click();
+  await k.locator("#topic-tab-attention").click();
+  const retryButton = k.locator('[data-retry-message-id="retry-message"]');
+  await Promise.all([k.waitForRequest(r => r.url().endsWith("/api/knowledge/extract")),retryButton.click()]);
+  assert.equal(await retryButton.isDisabled(),true);
+  await k.evaluate(() => window.AmayoriUI.topics.load());
+  assert.equal(await retryButton.isDisabled(),true,"refresh keeps the request disabled");
+  await k.evaluate(() => document.querySelector('[data-retry-message-id="retry-message"]').click());
+  await k.locator("#topic-window-close").click();
+  await k.locator('.topic-folder[data-topic-path="Проверка"]').click();
+  await k.locator("#topic-tab-attention").click();
+  assert.equal(await retryButton.isDisabled(),true,"reopening keeps the request disabled");
+  assert.equal(retryCalls,1,"only one Cloud request can be pending per message");
+  releaseRetry();
+  await k.locator("#topic-window-status").filter({hasText:"Повторите позже"}).waitFor();
+  await k.waitForFunction(() => !document.querySelector('[data-retry-message-id="retry-message"]').disabled);
+  await k.locator("#topic-window-close").click();
+  check("A pending manual retry stays disabled through attention refreshes and reopening, sends one request, and becomes available again after an error");
+
   assert.deepEqual(errors, [], "no browser JavaScript errors");
   console.log(
     checks.map((value, index) => index + 1 + ". " + value).join("\n"),

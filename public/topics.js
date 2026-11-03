@@ -4,6 +4,7 @@
     { api, icon, empty, date, notify, preview } = UI,
     $ = (id) => document.getElementById(id);
   const dialog = $("topic-window");
+  const pendingRetries = new Set();
   let overview = { folders: [], roots: [], total: 0 },
     selectedTopic = "",
     mode = "knowledge",
@@ -226,12 +227,14 @@
             "field-hint",
           ),
         );
-        card.append(
-          action(
-            "Повторить разбор сообщения",
+        const retryButton = action(
+            pendingRetries.has(issue.messageId) ? "Разбираем…" : "Повторить разбор сообщения",
             async (event) => {
+              if (pendingRetries.has(issue.messageId)) return;
+              pendingRetries.add(issue.messageId);
               const button = event.currentTarget;
               button.disabled = true;
+              button.textContent = "Разбираем…";
               try {
                 await api("/api/knowledge/extract", {
                   method: "POST",
@@ -243,12 +246,15 @@
               } catch (error) {
                 $("topic-window-status").textContent = error.message;
               } finally {
-                button.disabled = false;
+                pendingRetries.delete(issue.messageId);
+                if (dialog.open && mode === "attention") renderAttention();
               }
             },
             "button subtle",
-          ),
-        );
+          );
+        retryButton.dataset.retryMessageId = issue.messageId;
+        retryButton.disabled = pendingRetries.has(issue.messageId);
+        card.append(retryButton);
       }
       panel.append(card);
     }

@@ -381,3 +381,26 @@ test("extraction can be disabled; failed jobs wait for explicit retry and never 
   assert.equal((await f.service.status()).failed, 0);
   assert.deepEqual(await f.service.problemMessages(), []);
 });
+
+test("successful manual retry resumes waiting jobs and respects disabled and forced-off extraction", async () => {
+  for (const control of ["enabled", "disabled", "forced-off"]) {
+    let calls = 0, forced = false;
+    const f = extractionFixture({
+      forcedOff: () => forced,
+      extract: async () => { calls++; if(calls===1) throw Error("Temporary failure"); return [input]; },
+    });
+    await f.service.enqueue([{id:"failed",role:"user",content:"Первый"},{id:"waiting",role:"user",content:"Следующий"}]);
+    await f.service.wait();
+    assert.equal((await f.service.status()).queued,1);
+    assert.equal((await f.service.status()).failed,1);
+    if(control==="disabled") await f.service.configure(false);
+    if(control==="forced-off") forced=true;
+    await f.service.completeMessage("failed",1);
+    await f.service.wait();
+    const status=await f.service.status();
+    assert.equal(status.failed,0);
+    assert.equal(calls,control==="enabled"?2:1,control);
+    assert.equal(status.queued,control==="enabled"?0:1,control);
+    assert.equal(status.completed,control==="enabled"?2:1,control);
+  }
+});
