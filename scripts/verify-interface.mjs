@@ -650,6 +650,50 @@ try {
     document.getElementById("notice").textContent.includes("Пересобираю"),
   );
   check("Голем подписан на поток активности и реагирует на события");
+  // The sky used to have no controls at all: a star could only be found by chance.
+  await popup.route("**/api/golem/knowledge*", (route) =>
+    route.fulfill({
+      json: {
+        nodes: [
+          { id: "Амаёри", label: "Амаёри" },
+          { id: "Node.js", label: "Node.js" },
+          { id: "память", label: "память" },
+        ],
+        edges: [
+          { id: "1", source: "Амаёри", target: "Node.js", label: "написан на", sourceType: "user-confirmed", confidence: 1, createdAt: "2026-01-01T00:00:00Z" },
+          { id: "2", source: "Амаёри", target: "память", label: "хранит", sourceType: "cloudru-extracted", confidence: 0.9, createdAt: "2026-02-01T00:00:00Z" },
+        ],
+        total: 3,
+        source: "postgresql",
+      },
+    }),
+  );
+  await popup.reload();
+  await popup.waitForFunction(
+    () => !document.getElementById("legend").hidden &&
+      document.querySelectorAll(".sky-label").length > 0,
+  );
+  await popup.keyboard.press("/");
+  await popup.waitForSelector("#sky-search:not([hidden])");
+  await popup.locator("#sky-query").fill("Амаёри");
+  await popup.waitForFunction(
+    () => /^1 \/ \d+$/.test(document.getElementById("sky-count").textContent || ""),
+  );
+  await popup.keyboard.press("Enter");
+  await popup.waitForSelector("#detail:not([hidden])");
+  assert.match(
+    (await popup.locator("#detail-body h2").textContent()) || "",
+    /Амаёри/,
+    "поиск доводит до карточки звезды",
+  );
+  await popup.locator("#sky-query").press("Escape");
+  await popup.waitForSelector("#sky-search", { state: "hidden" });
+  await popup.locator(".legend-row").first().click();
+  await popup.waitForSelector(".legend-row.isolated");
+  await popup.locator(".legend-row.isolated").first().click();
+  assert.equal(await popup.locator(".legend-row.isolated").count(), 0,
+    "повторное нажатие снимает изоляцию созвездия");
+  check("Небо ищется, подписывается, ходится клавишами и фильтруется по созвездию");
   await popup.close();
   check(
     "Golem opens separately without toolbar clutter and recovers from GPU context loss",
