@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0.0",
   "project": "Aspksa/Amayori",
-  "version": "0.14.0",
+  "version": "0.15.0",
   "updated_at": "2026-11-03",
   "language": "ru",
   "objective": "Единый развивающийся ИИ-мозг: Cloud.ru сейчас, проверяемое дообучение позже",
@@ -41,7 +41,8 @@
     {"id": "workspace-0-10", "status": "merged", "prs": [53], "description": "Чат рядом с картой или архивом, изменяемые пропорции и личное левое меню"},
     {"id": "knowledge-0-11", "status": "merged", "prs": [54], "description": "Карточки знаний с источниками и историей, объединение повторов, авторазбор сообщений и перенос в базу"},
     {"id": "forgetting-and-conversations", "status": "merged", "description": "Удаление сообщений, диалогов и знаний; отдельные диалоги; страничный архив с поиском на сервере; резервная копия вместе с PostgreSQL; pgvector в CI и аудит зависимостей"},
-    {"id": "topic-folders-0-13", "status": "implemented", "description": "Темы-папки, компактные знания, конкретные вопросы и связанные беседы в одном центральном окне"}
+    {"id": "topic-folders-0-13", "status": "merged", "prs": [60], "description": "Темы-папки, компактные знания, конкретные вопросы и связанные беседы в одном центральном окне"},
+    {"id": "memory-navigation-0-15", "status": "implemented", "description": "Поиск папок и подтем, личные закрепления, фильтр внимания и поиск бесед внутри папки"}
   ],
   "pending_pull_requests": [],
   "roadmap": [
@@ -108,13 +109,11 @@
   ],
   "verification": {
     "note": "Статус заполняется по результатам запусков, а не по обещаниям",
-    "unit_tests": "npm test — 72 из 72 после npm ci; два теста с базой идут только там, где она поднята",
-    "syntax": "npm run test:syntax — 47 модулей; список файлов больше не задаётся вручную",
-    "browser_tests": "npm run test:ui — 21 проверка, требует Chromium",
+    "unit_tests": "npm test — 87 проверок; локально 86 прошли, pgvector проверяется в CI на настоящей базе",
+    "syntax": "npm run test:syntax — 71 модуль; файлы обнаруживаются автоматически",
+    "browser_tests": "npm run test:ui — 26 сценариев, требует Chromium",
     "not_verified": [
-      "Полный прогон на Windows",
       "Реальные запросы Cloud.ru",
-      "Реальная установка PostgreSQL с pgvector",
       "Сборка Python-мозга с загрузкой модели эмбеддингов"
     ]
   },

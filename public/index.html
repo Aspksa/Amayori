@@ -307,6 +307,21 @@
                 class="knowledge-extraction-status"
                 role="status"
               ></p>
+              <div id="topic-folder-tools" class="topic-folder-tools" hidden>
+                <label class="search-field">
+                  <svg class="icon" aria-hidden="true"><use href="/icons.svg#search"></use></svg>
+                  <input id="topic-folder-search" type="search" maxlength="200" placeholder="Найти папку или подтему" aria-label="Поиск папок и подтем" />
+                </label>
+                <label class="topic-folder-filter">
+                  <span class="sr-only">Показать папки</span>
+                  <select id="topic-folder-filter" aria-label="Показать папки">
+                    <option value="all">Все темы</option>
+                    <option value="pinned">Закреплённые</option>
+                    <option value="attention">Требуют внимания</option>
+                  </select>
+                </label>
+              </div>
+              <p id="topic-folder-results" class="muted small-text" role="status" hidden></p>
               <div
                 id="topic-folders"
                 class="topic-folders scroll-area"
@@ -954,6 +969,13 @@
         </div>
       </div>
       <div id="topic-panel-conversations" class="topic-window-panel" hidden>
+        <div id="topic-conversation-tools" class="topic-conversation-tools">
+          <label class="search-field">
+            <svg class="icon" aria-hidden="true"><use href="/icons.svg#search"></use></svg>
+            <input id="topic-conversation-search" type="search" maxlength="200" placeholder="Найти в беседах папки" aria-label="Поиск по беседам папки" />
+          </label>
+          <span id="topic-conversation-results" class="muted small-text" role="status"></span>
+        </div>
         <div
           id="topic-conversation-list"
           class="topic-conversation-list scroll-area"
@@ -1141,6 +1163,7 @@
     <script src="/workspace-prefs.js" defer></script>
     <script src="/workspace.js" defer></script>
     <script src="/knowledge.js" defer></script>
+    <script src="/topic-navigation.js" defer></script>
     <script src="/topics.js" defer></script>
     <script src="/app.js" defer></script>
     <script src="/chat-avatar.js" defer></script>

@@ -1717,6 +1717,101 @@ try {
   await k.locator("#topic-window-close").click();
   check("A pending manual retry stays disabled through attention refreshes and reopening, sends one request, and becomes available again after an error");
 
+  const navContext = await browserContext({viewport:{width:1440,height:950}});
+  await navContext.route("**/api/**", mockRoute);
+  const navFolders = [
+    {path:"Amayori",name:"Amayori",children:["Amayori / Дизайн"],count:2,active:2,conversations:34,attention:1,issues:[{type:"source",factId:"1",label:"Проверить источник"}]},
+    {path:"Amayori / Дизайн",name:"Дизайн",children:[],count:2,active:2,conversations:34,attention:0,issues:[]},
+    ...Array.from({length:44},(_,i)=>({path:"Тема "+i,name:"Тема "+i,children:[],count:1,active:1,conversations:0,attention:i===17?1:0,issues:i===17?[{type:"source",factId:"1",label:"Проверить источник"}]:[]})),
+  ];
+  const navOverview = {folders:navFolders,roots:navFolders.filter(f=>!f.path.includes(" / ")).map(f=>f.path),total:46};
+  await navContext.route("**/api/knowledge/folders", route=>route.fulfill({json:navOverview}));
+  const navMessages = Array.from({length:34},(_,i)=>({id:"nav-"+i,conversation:"nav-conversation-"+i,role:"user",content:i===0?"Вводный текст ".repeat(60)+"Уникальная строка <img src=x onerror=alert(1)>":"Разговор о дизайне "+i,at:new Date(Date.UTC(2026,0,1,0,i)).toISOString()}));
+  navMessages.push({id:"foreign",conversation:"foreign",role:"user",content:"Уникальная строка из другой темы",at:"2026-02-01"});
+  const navGroups = groupConversations(navMessages).map(g=>({...g,topics:[g.canonicalId==="foreign"?"Другая тема":"Amayori / Дизайн"]}));
+  await navContext.route("**/api/conversations/grouped?*",route=>route.fulfill({json:listConversations(navGroups,Object.fromEntries(new URL(route.request().url()).searchParams))}));
+  await navContext.route("**/api/conversations/item?*",route=>{
+    const params=new URL(route.request().url()).searchParams;
+    return route.fulfill({json:conversationPage(navGroups,params.get("id"),Object.fromEntries(params))});
+  });
+  const navPage=await navContext.newPage();
+  navPage.on("pageerror", error=>errors.push(error.message));
+  await navPage.goto(base+"/#memory/facts");
+  await navPage.waitForFunction(()=>document.querySelectorAll(".topic-folder").length===45);
+  const pinWork=navPage.locator('[data-pin-path="Тема 32"]');
+  await pinWork.click();
+  assert.equal(await navPage.locator(".topic-folder").first().getAttribute("data-topic-path"),"Тема 32");
+  assert.equal(await navPage.locator("dialog[open]").count(),0,"pinning never opens a folder");
+  await pinWork.focus();
+  await navPage.evaluate(()=>{globalThis.savedPinFocus=document.activeElement;return window.AmayoriUI.topics.load();});
+  assert.equal(await navPage.evaluate(()=>document.activeElement===globalThis.savedPinFocus),true,"unchanged polling preserves the focused control");
+  await navPage.locator("#topic-folder-filter").selectOption("pinned");
+  assert.equal(await navPage.locator(".topic-folder").count(),1);
+  await navPage.reload();
+  await navPage.locator('[data-pin-path="Тема 32"][aria-pressed="true"]').waitFor();
+  await navPage.locator("#topic-folder-filter").selectOption("pinned");
+  await navPage.locator('[data-pin-path="Тема 32"]').click();
+  await navPage.getByRole("button",{name:"Показать все темы",exact:true}).click();
+  await navPage.locator("#topic-folder-search").fill("дизайн");
+  assert.equal(await navPage.locator(".topic-folder").count(),1);
+  assert.match(await navPage.locator(".topic-folder").textContent(),/Подтемы: Дизайн/);
+  await navPage.locator("#topic-folder-search").fill("неизвестная папка");
+  await navPage.getByRole("button",{name:"Сбросить поиск и фильтр",exact:true}).click();
+  await navPage.locator("#topic-folder-filter").selectOption("attention");
+  assert.equal(await navPage.locator(".topic-folder").count(),2);
+  navFolders[0].attention=0;navFolders[0].issues=[];
+  await navPage.evaluate(()=>window.AmayoriUI.topics.load());
+  assert.equal(await navPage.locator(".topic-folder").count(),1);
+  assert.equal(await navPage.locator(".topic-folder").getAttribute("data-topic-path"),"Тема 17");
+  await navPage.locator("#topic-folder-filter").selectOption("all");
+  await navPage.locator('[data-pin-path="Amayori"]').click();
+  const otherNavPage=await navContext.newPage();
+  await otherNavPage.goto(base+"/#memory/facts");
+  await otherNavPage.locator('[data-pin-path="Amayori"][aria-pressed="true"]').waitFor();
+  await otherNavPage.locator('[data-pin-path="Amayori"]').click();
+  await navPage.locator('[data-pin-path="Amayori"][aria-pressed="false"]').waitFor();
+  await otherNavPage.close();
+  await navPage.evaluate(()=>localStorage.setItem("amayori-topic-navigation","broken JSON"));
+  await navPage.reload();
+  await navPage.waitForFunction(()=>document.querySelectorAll(".topic-folder").length===45);
+  assert.equal(await navPage.locator('.topic-folder-pin[aria-pressed="true"]').count(),0);
+  for(const width of [320,390,768,1440]){
+    await navPage.setViewportSize({width,height:844});
+    assert.equal(await navPage.evaluate(()=>document.documentElement.scrollWidth<=innerWidth&&document.documentElement.scrollHeight<=innerHeight+1),true,"many folders stay inside the page at "+width);
+    const box=await navPage.locator("#topic-folders").boundingBox();
+    assert.ok(box.height>30&&box.y+box.height<=844);
+    await navPage.locator("#topic-folder-search").fill("дизайн");
+    assert.equal(await navPage.locator(".topic-folder").count(),1);
+    await navPage.locator("#topic-folder-search").fill("");
+  }
+  check("Folder navigation searches child themes, pins without opening or duplicating folders, survives reloads and malformed preferences, syncs across tabs, preserves focus and fits 45 folders at 320–1440 px");
+  await navPage.locator('a.nav-link[data-page="chat"]').click();
+  await navPage.locator("#chat-input").fill("Черновик поиска памяти");
+  await navPage.locator('a.nav-link[data-page="memory"]').click();
+  await navPage.locator("#tab-facts").click();
+  await navPage.locator('.topic-folder[data-topic-path="Amayori"]').click();
+  await navPage.locator("#topic-tab-conversations").click();
+  await navPage.waitForFunction(()=>document.querySelectorAll("#topic-conversation-list .conversation-item").length===30);
+  await navPage.locator("#topic-conversation-more").click();
+  await navPage.waitForFunction(()=>document.querySelectorAll("#topic-conversation-list .conversation-item").length===34);
+  await navPage.locator("#topic-conversation-search").fill("уникальная строка");
+  await navPage.waitForFunction(()=>document.querySelectorAll("#topic-conversation-list .conversation-item").length===1);
+  assert.equal(await navPage.locator("#topic-conversation-more").isVisible(),false);
+  assert.equal(await navPage.locator("#topic-conversation-list mark").textContent(),"Уникальная строка");
+  await navPage.locator("#topic-conversation-list .conversation-item").click();
+  await navPage.locator('.conversation-message.is-source[data-message-id="nav-0"]').waitFor();
+  assert.equal(await navPage.locator("#topic-conversation-messages img").count(),0);
+  assert.equal(await navPage.locator("dialog[open]").count(),1);
+  assert.equal(await navPage.locator("#chat-input").inputValue(),"Черновик поиска памяти");
+  await navPage.locator("#topic-conversation-back").click();
+  assert.equal(await navPage.locator("#topic-conversation-search").inputValue(),"уникальная строка");
+  await navPage.locator("#topic-conversation-search").fill("совпадений не существует");
+  await navPage.locator("#topic-conversation-list h3").filter({hasText:"В этой папке совпадений нет"}).waitFor();
+  await navPage.locator("#topic-conversation-search").fill("");
+  await navPage.waitForFunction(()=>document.querySelectorAll("#topic-conversation-list .conversation-item").length===30);
+  await navPage.locator("#topic-window-close").click();
+  check("Folder conversation search resets paging, excludes other themes, shows matching long-message snippets, opens the exact safe source and preserves its query and the current chat draft");
+
   assert.deepEqual(errors, [], "no browser JavaScript errors");
   console.log(
     checks.map((value, index) => index + 1 + ". " + value).join("\n"),
