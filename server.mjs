@@ -6,6 +6,7 @@ import {read,write,record,chatHistory,postgresCanonical,refreshGolemSnapshot,con
 import {cloudChat,cloudModels} from './core/cloud-client.mjs';
 import {bridgeStatus,graphitiIngest} from './core/bridges.mjs';
 import {getCortex,queryCortex} from './core/golem-data.mjs';
+import {buildGolemNetwork} from './core/golem-network.mjs';
 import {startGolemBrainAutomation,getGolemBuildStatus} from './core/golem-auto.mjs';
 import {cloudEmbedding} from './core/cloud-embedding.mjs';
 import {collectChatMemory} from './core/chat-memory.mjs';
@@ -187,6 +188,11 @@ const server=http.createServer(async(req,res)=>{
    const query=(url.searchParams.get('q')||'').slice(0,200);
    const messages=await chatHistory({limit,offset,conversationId:conversationId||null,query});
    return json(res,200,{messages,total:messages.total??messages.length,limit,offset,query,conversation:conversationId||null});
+  }
+  if(req.method==='GET'&&p==='/api/golem/network') {
+    const raw=url.searchParams.get('limit')||'10000';
+    if(!/^[0-9]{1,5}$/.test(raw)||Number(raw)<1||Number(raw)>10000)return json(res,400,{error:'Лимит должен быть от 1 до 10000'});
+    return json(res,200,buildGolemNetwork(await knowledge.all(),{limit:Number(raw)}));
   }
   if(req.method==='GET'&&p==='/api/golem/knowledge')return json(res,200,await knowledge.graph({q:url.searchParams.get('q')||'',limit:url.searchParams.get('limit'),offset:url.searchParams.get('offset')}));
   if(req.method==='GET'&&p==='/api/golem/source'){
