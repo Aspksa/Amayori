@@ -38,7 +38,7 @@
 | `POST /api/knowledge/topics/merge` | Объединение `{from,to}` с сохранением метаданных                     |
 | `POST /api/knowledge/topic`        | Ручное назначение темы `{id,topic}`                                  |
 | `GET /api/conversations/grouped`           | Список бесед; `q`, `topic`, `offset`, `limit`                        |
-| `GET /api/conversations/item`      | Страница беседы; `id`, `offset`, `limit`, необязательный `messageId` |
+| `GET /api/conversations/item`      | Страница беседы; `id`, `offset`, `limit`, `messageId`; без `id` — поиск беседы по точному ID сообщения |
 | `GET /api/conversations/source`    | Переход к источнику; `factId`, `messageId`                           |
 
 Факты и тематические события сохраняются в прежнем локальном JSON или PostgreSQL. Новых рабочих зависимостей и отдельного сервиса нет. Выборка знаний по родительской теме включает её подтемы. Метаданные папок вычисляются сервером из канонических записей; клиент получает содержимое выбранной папки и страницы бесед по запросу.

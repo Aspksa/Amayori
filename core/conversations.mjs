@@ -175,7 +175,9 @@ export function conversationPage(
   id,
   { offset = 0, limit = 50, messageId } = {},
 ) {
-  const group = groups.find((g) => g.id === String(id));
+  const group = groups.find((g) => id
+    ? g.id === String(id)
+    : messageId && g.messages.some(m => String(m.id) === String(messageId)));
   if (!group)
     throw Object.assign(Error("Беседа не найдена"), { statusCode: 404 });
   const size = Math.max(1, Math.min(100, Math.floor(Number(limit) || 50)));

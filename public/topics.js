@@ -383,8 +383,10 @@
           document.dispatchEvent(new Event("amayori-chat-removed"));
           await load();
           if (dialog.open && ticket === conversationRequest) {
-            if (data.total > 1) await openConversation(data.id, {offset:data.offset});
-            else await loadConversations();
+            if (data.total > 1) {
+              const next = data.messages.find(item => String(item.id) !== String(message.id));
+              await openConversation(next ? "" : data.id, {offset:Math.max(0,data.offset - (next ? 0 : 1)),messageId:next?.id});
+            } else await loadConversations();
           }
           notify(result.facts ? "Сообщение удалено, забыто знаний: " + result.facts : "Сообщение удалено");
         } catch (error) { notify(error.message, "error"); forget.disabled = false; }

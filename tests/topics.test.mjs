@@ -330,3 +330,13 @@ test("explicit canonical conversations remain separate across gaps and interleav
  assert.deepEqual(groups[0].messages.map(m=>m.id),["a","c"]);
  assert.equal(groups[1].canonicalId,"two");
 });
+
+test("an exact surviving message opens a legacy conversation after its first message is deleted",()=>{
+ const messages=[{id:"first",role:"user",content:"Первый вопрос",at:"2026-01-01"},{id:"answer",role:"assistant",content:"Ответ",at:"2026-01-01"}];
+ const before=groupConversations(messages);
+ const after=groupConversations(messages.slice(1));
+ assert.notEqual(before[0].id,after[0].id);
+ const page=conversationPage(after,"",{messageId:"answer"});
+ assert.equal(page.id,after[0].id);
+ assert.equal(page.messages[0].id,"answer");
+});

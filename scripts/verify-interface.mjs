@@ -446,7 +446,7 @@ try {
     "memory",
   );
   const beforeForget = await page.locator("#topic-conversation-messages .conversation-message").count();
-  const forget = page.locator("#topic-conversation-messages .archive-forget").last();
+  const forget = page.locator("#topic-conversation-messages .archive-forget").first();
   await forget.click();
   assert.equal(await forget.textContent(), "Удалить?");
   await forget.click();
