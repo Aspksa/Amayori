@@ -407,3 +407,35 @@ export function graphPage(facts, options = {}) {
     limit: page.limit,
   };
 }
+
+// Forgetting has to be real: the card goes, the excerpts of a deleted message
+// go with it, and nothing is left pointing at what no longer exists.
+export function forgetFacts(facts, {ids = [], messages = []} = {}) {
+  const wanted = new Set(ids.map(String).filter(Boolean));
+  const fromMessages = new Set(messages.map(String).filter(Boolean));
+  const doomed = new Set();
+  for (const fact of facts) {
+    const id = String(fact.id);
+    if (wanted.has(id)) doomed.add(id);
+    else if (fromMessages.size && fromMessages.has(String(fact.source_message_id ?? "")))
+      doomed.add(id);
+  }
+  for (let i = facts.length - 1; i >= 0; i--)
+    if (doomed.has(String(facts[i].id))) facts.splice(i, 1);
+  for (const fact of facts) {
+    if (doomed.has(String(fact.superseded_by))) {
+      fact.superseded_by = null;
+      if (fact.status === "superseded") fact.status = "active";
+    }
+    if (doomed.has(String(fact.merged_into))) fact.merged_into = null;
+    if (fromMessages.size && Array.isArray(fact.sources)) {
+      const kept = fact.sources.filter(
+        (source) => !fromMessages.has(String(source?.messageId ?? "")),
+      );
+      if (kept.length !== fact.sources.length) fact.sources = kept;
+    }
+    if (fromMessages.has(String(fact.source_message_id ?? "")))
+      fact.source_message_id = null;
+  }
+  return {removed: [...doomed]};
+}

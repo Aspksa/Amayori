@@ -1,0 +1,14 @@
+# Dependencies are installed on the user's own machine at first launch, so a
+# known vulnerability reaches them directly. Weekly updates keep that small.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3

@@ -6,12 +6,13 @@
   const panel = document.createElement("section");
   panel.id = "floating-chat";
   panel.setAttribute("aria-label", "Диалог с Amayori");
-  panel.innerHTML = `<header class="chat-top"><label class="model-control">${icon("spark")}<span class="sr-only">Модель для сообщения</span><select id="chat-model"><option value="">Выберите модель</option></select></label><div class="chat-top-actions"><button type="button" class="icon-button" id="chat-find" aria-label="Поиск в диалоге" title="Поиск">${icon("search")}</button><button type="button" class="icon-button" id="chat-more" aria-label="Действия с диалогом" title="Действия" aria-haspopup="menu" aria-expanded="false">${icon("more")}</button><div class="chat-menu" id="chat-menu" role="menu" hidden><button type="button" role="menuitem" id="chat-export">${icon("download")}Экспорт последних 100</button><button type="button" role="menuitem" id="chat-clear-view">${icon("refresh")}Очистить экран</button></div><button type="button" class="icon-button" id="chat-expand" aria-label="Развернуть диалог" title="Развернуть">${icon("expand")}</button><button type="button" class="icon-button" id="chat-close" aria-label="Закрыть диалог" title="Закрыть">${icon("close")}</button></div></header><div class="chat-search-bar" id="chat-search-bar" hidden><label class="search-field">${icon("search")}<input id="chat-search" type="search" placeholder="Найти в диалоге" aria-label="Поиск в загруженной истории"></label><span id="chat-search-count" class="chat-search-count"></span><button class="icon-button" type="button" id="chat-search-close" aria-label="Закрыть поиск">${icon("close")}</button></div><div id="chat-history" class="scroll-area" role="log" aria-label="Переписка" aria-live="polite" aria-relevant="additions text"></div><div class="chat-composer"><div id="chat-connection-hint" class="connection-hint" hidden>${icon("link")}<span>Для диалога нужна модель.</span><button type="button" id="chat-connect">Подключить</button></div><form id="chat-form"><div class="composer-box"><label for="chat-input" class="sr-only">Ваше сообщение</label><textarea id="chat-input" rows="1" maxlength="4000" placeholder="Напишите, о чём думаете…" autocomplete="off" required></textarea><div class="composer-actions"><span class="composer-shortcut"><kbd>Enter</kbd> — отправить · <kbd>Shift + Enter</kbd> — новая строка</span><span id="chat-input-count" class="composer-count" hidden></span><button id="chat-send" type="submit" aria-label="Отправить сообщение" title="Отправить" disabled>${icon("arrow")}</button></div></div></form><p class="chat-footer" id="chat-footer"></p></div>`;
+  panel.innerHTML = `<header class="chat-top"><label class="model-control conversation-control">${icon("note")}<span class="sr-only">Диалог</span><select id="chat-conversation"><option value="">Текущий диалог</option></select></label><label class="model-control">${icon("spark")}<span class="sr-only">Модель для сообщения</span><select id="chat-model"><option value="">Выберите модель</option></select></label><div class="chat-top-actions"><button type="button" class="icon-button" id="chat-find" aria-label="Поиск в диалоге" title="Поиск">${icon("search")}</button><button type="button" class="icon-button" id="chat-more" aria-label="Действия с диалогом" title="Действия" aria-haspopup="menu" aria-expanded="false">${icon("more")}</button><div class="chat-menu" id="chat-menu" role="menu" hidden><button type="button" role="menuitem" id="chat-export">${icon("download")}Экспорт последних 100</button><button type="button" role="menuitem" id="chat-clear-view">${icon("refresh")}Очистить экран</button></div><button type="button" class="icon-button" id="chat-expand" aria-label="Развернуть диалог" title="Развернуть">${icon("expand")}</button><button type="button" class="icon-button" id="chat-close" aria-label="Закрыть диалог" title="Закрыть">${icon("close")}</button></div></header><div class="chat-search-bar" id="chat-search-bar" hidden><label class="search-field">${icon("search")}<input id="chat-search" type="search" placeholder="Найти в диалоге" aria-label="Поиск в загруженной истории"></label><span id="chat-search-count" class="chat-search-count"></span><button class="icon-button" type="button" id="chat-search-close" aria-label="Закрыть поиск">${icon("close")}</button></div><div id="chat-history" class="scroll-area" role="log" aria-label="Переписка" aria-live="polite" aria-relevant="additions text"></div><div class="chat-composer"><div id="chat-connection-hint" class="connection-hint" hidden>${icon("link")}<span>Для диалога нужна модель.</span><button type="button" id="chat-connect">Подключить</button></div><form id="chat-form"><div class="composer-box"><label for="chat-input" class="sr-only">Ваше сообщение</label><textarea id="chat-input" rows="1" maxlength="4000" placeholder="Напишите, о чём думаете…" autocomplete="off" required></textarea><div class="composer-actions"><span class="composer-shortcut"><kbd>Enter</kbd> — отправить · <kbd>Shift + Enter</kbd> — новая строка</span><span id="chat-input-count" class="composer-count" hidden></span><button id="chat-send" type="submit" aria-label="Отправить сообщение" title="Отправить" disabled>${icon("arrow")}</button></div></div></form><p class="chat-footer" id="chat-footer"></p></div>`;
   mount.append(panel);
   const $ = (id) => panel.querySelector("#" + id),
     history = $("chat-history"),
     input = $("chat-input"),
-    select = $("chat-model");
+    select = $("chat-model"),
+    conversationSelect = $("chat-conversation");
   const avatar = document.createElement("button");
   avatar.id = "chat-avatar";
   avatar.type = "button";
@@ -254,10 +255,69 @@
       ? found + " совпадений"
       : "";
   }
+  let conversationId = null, conversationList = [];
+  const NEW_CONVERSATION = "__new__";
+  function renderConversations() {
+    const current = conversationId == null ? "" : String(conversationId);
+    conversationSelect.replaceChildren();
+    for (const entry of conversationList) {
+      const option = document.createElement("option");
+      option.value = String(entry.id);
+      option.textContent = entry.title + " · " + entry.messages;
+      conversationSelect.append(option);
+    }
+    if (!conversationList.length) {
+      const option = document.createElement("option");
+      option.value = "";
+      option.textContent = "Текущий диалог";
+      conversationSelect.append(option);
+    }
+    const fresh = document.createElement("option");
+    fresh.value = NEW_CONVERSATION;
+    fresh.textContent = "＋ Новый диалог";
+    conversationSelect.append(fresh);
+    conversationSelect.value =
+      conversationList.some((entry) => String(entry.id) === current) ? current
+        : conversationList[0] ? String(conversationList[0].id) : "";
+    conversationId = conversationSelect.value || null;
+  }
+  async function loadConversations() {
+    try {
+      const data = await api("/api/conversations");
+      conversationList = Array.isArray(data.conversations) ? data.conversations : [];
+      renderConversations();
+    } catch (error) {
+      console.warn("Conversations:", error.message);
+    }
+  }
+  conversationSelect.addEventListener("change", async () => {
+    if (conversationSelect.value === NEW_CONVERSATION) {
+      try {
+        const made = await api("/api/conversations", {
+          method: "POST",
+          body: JSON.stringify({title: "Новый диалог"}),
+        });
+        conversationList = [made, ...conversationList];
+        conversationId = String(made.id);
+        renderConversations();
+        notify("Новый диалог создан");
+      } catch (error) {
+        notify(error.message, "error");
+        renderConversations();
+        return;
+      }
+    } else conversationId = conversationSelect.value || null;
+    revision++;
+    records = [];
+    await loadHistory();
+  });
   async function loadHistory() {
     const version = revision;
     try {
-      const data = await api("/api/chats");
+      const data = await api(
+        "/api/chats?limit=100" +
+          (conversationId ? "&conversation=" + encodeURIComponent(conversationId) : ""),
+      );
       if (version !== revision || busy) return;
       records = (data.messages || []).filter(
         (message) =>
@@ -449,7 +509,11 @@
     try {
       const data = await api("/api/chat", {
         method: "POST",
-        body: JSON.stringify({ message: text, model: select.value }),
+        body: JSON.stringify({
+          message: text,
+          model: select.value,
+          conversationId: conversationId || null,
+        }),
       });
       const answer = {
         role: "assistant",
@@ -634,5 +698,5 @@
   clamp();
   updateModels();
   renderHistory();
-  void loadHistory();
+  void loadConversations().then(() => loadHistory());
 })();

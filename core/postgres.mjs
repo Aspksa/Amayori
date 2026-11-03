@@ -52,22 +52,101 @@ export async function ensureCanonicalTable(){
  content TEXT NOT NULL,
  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
  )`);
+ await db.query(`CREATE TABLE IF NOT EXISTS amayori_conversations(
+ id BIGSERIAL PRIMARY KEY,
+ title TEXT NOT NULL DEFAULT 'Новый диалог',
+ created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+ updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+ )`);
+ await db.query('ALTER TABLE amayori_chat_log ADD COLUMN IF NOT EXISTS conversation_id BIGINT');
+ await db.query('CREATE INDEX IF NOT EXISTS amayori_chat_log_conversation_idx ON amayori_chat_log(conversation_id,id)');
+ // Everything written before conversations existed belongs to one of them.
+ const orphans=await db.query('SELECT COUNT(*)::int AS n FROM amayori_chat_log WHERE conversation_id IS NULL');
+ if(orphans.rows[0].n>0){
+  const existing=await db.query('SELECT id FROM amayori_conversations ORDER BY id LIMIT 1');
+  const target=existing.rows[0]?.id??(await db.query("INSERT INTO amayori_conversations(title) VALUES('Общий диалог') RETURNING id")).rows[0].id;
+  await db.query('UPDATE amayori_chat_log SET conversation_id=$1 WHERE conversation_id IS NULL',[target]);
+ }
  return db;
 }
-export async function loadCanonicalChats(limit=null){
+export async function listConversations(){
  const db=await ensureCanonicalTable();
- const result=limit===null
- ?await db.query('SELECT id,role,content,created_at FROM amayori_chat_log ORDER BY id')
- :await db.query('SELECT id,role,content,created_at FROM (SELECT id,role,content,created_at FROM amayori_chat_log ORDER BY id DESC LIMIT $1) t ORDER BY id',[limit]);
- return result.rows.map(r=>({id:String(r.id),role:r.role,content:r.content,at:r.created_at.toISOString()}));
+ const r=await db.query(`SELECT c.id,c.title,c.created_at,c.updated_at,
+  COUNT(m.id)::int AS messages,MAX(m.created_at) AS last_at
+  FROM amayori_conversations c LEFT JOIN amayori_chat_log m ON m.conversation_id=c.id
+  GROUP BY c.id ORDER BY COALESCE(MAX(m.created_at),c.created_at) DESC,c.id DESC`);
+ return r.rows.map(row=>({id:String(row.id),title:row.title,messages:row.messages,
+  createdAt:row.created_at.toISOString(),updatedAt:(row.last_at||row.updated_at).toISOString()}));
 }
-export async function appendCanonicalExchange(user,assistant){
+export async function createConversation(title){
+ const db=await ensureCanonicalTable();
+ const r=await db.query('INSERT INTO amayori_conversations(title) VALUES($1) RETURNING id,title,created_at',[title]);
+ return {id:String(r.rows[0].id),title:r.rows[0].title,messages:0,
+  createdAt:r.rows[0].created_at.toISOString(),updatedAt:r.rows[0].created_at.toISOString()};
+}
+export async function renameConversation(id,title){
+ const db=await ensureCanonicalTable();
+ const r=await db.query('UPDATE amayori_conversations SET title=$1,updated_at=now() WHERE id=$2 RETURNING id',[title,id]);
+ return r.rowCount>0;
+}
+export async function deleteConversation(id){
  const db=await ensureCanonicalTable(),client=await db.connect();
  try{
   await client.query('BEGIN');
-  const userRow=await client.query('INSERT INTO amayori_chat_log(role,content) VALUES($1,$2) RETURNING id', ['user',user]);
-  await client.query('INSERT INTO amayori_chat_log(role,content) VALUES($1,$2)', ['assistant',assistant]);
-  await client.query('COMMIT');return Number(userRow.rows[0].id);
+  const messages=await client.query('SELECT id FROM amayori_chat_log WHERE conversation_id=$1',[id]);
+  const ids=messages.rows.map(r=>String(r.id));
+  await client.query('DELETE FROM amayori_memories WHERE chat_message_id = ANY($1::bigint[])',[ids]);
+  await client.query('DELETE FROM amayori_chat_log WHERE conversation_id=$1',[id]);
+  const gone=await client.query('DELETE FROM amayori_conversations WHERE id=$1 RETURNING id',[id]);
+  await client.query('COMMIT');
+  return {removed:gone.rowCount>0,messageIds:ids};
+ }catch(e){await client.query('ROLLBACK');throw e}finally{client.release()}
+}
+export async function deleteCanonicalMessages(ids){
+ if(!Array.isArray(ids)||!ids.length)return {messageIds:[]};
+ const db=await ensureCanonicalTable(),client=await db.connect();
+ try{
+  await client.query('BEGIN');
+  await client.query('DELETE FROM amayori_memories WHERE chat_message_id = ANY($1::bigint[])',[ids]);
+  const gone=await client.query('DELETE FROM amayori_chat_log WHERE id = ANY($1::bigint[]) RETURNING id',[ids]);
+  await client.query('COMMIT');
+  return {messageIds:gone.rows.map(r=>String(r.id))};
+ }catch(e){await client.query('ROLLBACK');throw e}finally{client.release()}
+}
+export async function loadCanonicalChats(options=null){
+ const {limit=null,offset=0,conversationId=null,query=''}=typeof options==='number'||options===null?{limit:options}:options;
+ const db=await ensureCanonicalTable();
+ const where=[],values=[];
+ if(conversationId!=null){values.push(conversationId);where.push('conversation_id=$'+values.length)}
+ if(query){values.push(String(query).slice(0,200).replace(/[\\%_]/g,'\\$&'));where.push("content ILIKE '%'||$"+values.length+"||'%' ESCAPE '\\'")}
+ const filter=where.length?' WHERE '+where.join(' AND '):'';
+ if(limit===null){
+  const all=await db.query('SELECT id,role,content,created_at,conversation_id FROM amayori_chat_log'+filter+' ORDER BY id',values);
+  return all.rows.map(chatRow);
+ }
+ const total=await db.query('SELECT COUNT(*)::int AS n FROM amayori_chat_log'+filter,values);
+ const page=[...values,Math.max(1,Math.min(500,Number(limit)||100)),Math.max(0,Number(offset)||0)];
+ const rows=await db.query('SELECT id,role,content,created_at,conversation_id FROM (SELECT id,role,content,created_at,conversation_id FROM amayori_chat_log'+filter
+  +' ORDER BY id DESC LIMIT $'+(page.length-1)+' OFFSET $'+page.length+') t ORDER BY id',page);
+ const list=rows.rows.map(chatRow);
+ list.total=total.rows[0].n;
+ return list;
+}
+const chatRow=r=>({id:String(r.id),role:r.role,content:r.content,at:r.created_at.toISOString(),
+ conversation:r.conversation_id==null?null:String(r.conversation_id)});
+export async function appendCanonicalExchange(user,assistant,conversationId=null){
+ const db=await ensureCanonicalTable(),client=await db.connect();
+ try{
+  await client.query('BEGIN');
+  let target=conversationId;
+  if(target==null){
+   const recent=await client.query('SELECT id FROM amayori_conversations ORDER BY updated_at DESC,id DESC LIMIT 1');
+   target=recent.rows[0]?.id??(await client.query("INSERT INTO amayori_conversations(title) VALUES('Общий диалог') RETURNING id")).rows[0].id;
+  }
+  const userRow=await client.query('INSERT INTO amayori_chat_log(role,content,conversation_id) VALUES($1,$2,$3) RETURNING id',['user',user,target]);
+  await client.query('INSERT INTO amayori_chat_log(role,content,conversation_id) VALUES($1,$2,$3)',['assistant',assistant,target]);
+  await client.query('UPDATE amayori_conversations SET updated_at=now() WHERE id=$1',[target]);
+  await client.query('COMMIT');return {messageId:Number(userRow.rows[0].id),conversationId:String(target)};
  }catch(e){await client.query('ROLLBACK');throw e}finally{client.release()}
 }
 export async function importCanonicalChats(messages){
