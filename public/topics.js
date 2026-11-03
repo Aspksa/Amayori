@@ -5,6 +5,10 @@
     $ = (id) => document.getElementById(id);
   const dialog = $("topic-window");
   const pendingRetries = new Set();
+  const navigation = window.AmayoriTopicNavigation;
+  const preferencesKey = "amayori-topic-navigation";
+  let preferences = navigation.normalize(null), folderFingerprint = "";
+  try { preferences = navigation.normalize(JSON.parse(localStorage.getItem(preferencesKey))); } catch {}
   let overview = { folders: [], roots: [], total: 0 },
     selectedTopic = "",
     mode = "knowledge",
@@ -14,7 +18,8 @@
   let conversationOffset = 0,
     archiveOffset = 0,
     reading = null,
-    searchTimer;
+    searchTimer,
+    conversationSearchTimer;
   const text = (tag, value, className) => {
     const node = document.createElement(tag);
     node.textContent = value;
@@ -34,6 +39,8 @@
   const currentFolder = () =>
     overview.folders.find((folder) => folder.path === selectedTopic);
   function folderButton(folder) {
+    const shell = document.createElement("article");
+    shell.className = "topic-folder-shell";
     const button = action("", () => void open(folder.path), "topic-folder");
     button.dataset.topicPath = folder.path;
     const symbol = document.createElement("span");
@@ -45,9 +52,13 @@
       text("strong", folder.name),
       text(
         "small",
-        quantity(folder.count, ["знание", "знания", "знаний"]) + " · " + quantity(folder.conversations, ["беседа", "беседы", "бесед"]),
+        quantity(folder.count, ["знание", "знания", "знаний"]) + (folder.conversations ? " · " + quantity(folder.conversations, ["беседа", "беседы", "бесед"]) : ""),
       ),
     );
+    if (folder.matchedChildren.length) {
+      const names = folder.matchedChildren.map(path => path.split(" / ").at(-1));
+      content.append(text("span", "Подтемы: " + names.slice(0, 2).join(", ") + (names.length > 2 ? "…" : ""), "topic-folder-match"));
+    }
     button.append(symbol, content);
     if (folder.attention) {
       const marker = text(
@@ -67,10 +78,69 @@
         folder.path +
         (folder.attention ? ", требует внимания: " + folder.attention : ""),
     );
-    return button;
+    const pin = action("", () => {
+      const next = navigation.toggle(preferences, folder.path);
+      if (!folder.pinned && !navigation.isPinned(next, folder.path)) {
+        notify("Можно закрепить до 200 папок");
+        return;
+      }
+      preferences = next;
+      try { localStorage.setItem(preferencesKey, JSON.stringify(preferences)); }
+      catch { notify("Закрепление сохранится до закрытия этой страницы"); }
+      renderFolders();
+    }, "icon-button topic-folder-pin");
+    pin.dataset.pinPath = folder.path;
+    pin.innerHTML = icon("pin");
+    pin.setAttribute("aria-pressed", String(folder.pinned));
+    pin.setAttribute("aria-label", (folder.pinned ? "Открепить папку " : "Закрепить папку ") + folder.path);
+    pin.title = folder.pinned ? "Открепить" : "Закрепить";
+    shell.append(button, pin);
+    return shell;
+  }
+  function renderFolders({resetScroll = false} = {}) {
+    const query = $("topic-folder-search").value;
+    const filter = $("topic-folder-filter").value;
+    const view = navigation.select(overview, {query, filter, prefs:preferences});
+    $("topic-folder-tools").hidden = !overview.roots.length && !query && filter === "all";
+    for (const [value, label] of [["all", "Все темы"], ["pinned", "Закреплённые"], ["attention", "Требуют внимания"]]) {
+      $("topic-folder-filter").querySelector('option[value="' + value + '"]').textContent = label + " · " + view.counts[value];
+    }
+    const status = $("topic-folder-results");
+    status.hidden = !query.trim() && filter === "all";
+    status.textContent = "Показано папок: " + view.rows.length + " из " + view.counts.all;
+    const fingerprint = JSON.stringify([view.rows.map(folder => [folder.path, folder.name, folder.count, folder.conversations, folder.attention, folder.pinned, folder.matchedChildren]), query, filter]);
+    const target = $("topic-folders");
+    if (resetScroll) target.scrollTop = 0;
+    if (fingerprint === folderFingerprint) return;
+    folderFingerprint = fingerprint;
+    const active = document.activeElement;
+    const focusedPin = active?.dataset.pinPath, focusedFolder = active?.dataset.topicPath;
+    const scroll = target.scrollTop;
+    target.replaceChildren(...view.rows.map(folderButton));
+    if (!view.rows.length) {
+      const noFolders = !overview.roots.length;
+      const title = noFolders ? "Здесь появятся темы памяти" : query.trim() ? "Папки не найдены" : filter === "pinned" ? "Важные темы под рукой" : "Всё разобрано";
+      const hint = noFolders ? "Добавьте знание или извлеките сведения из переписки." : query.trim() ? "Попробуйте название папки или её подтемы." : filter === "pinned" ? "Закрепите нужные папки значком булавки." : "В папках нет вопросов, требующих решения.";
+      const state = empty(title, hint);
+      if (!noFolders) state.append(action(query.trim() ? "Сбросить поиск и фильтр" : "Показать все темы", () => {
+        $("topic-folder-search").value = "";
+        $("topic-folder-filter").value = "all";
+        renderFolders({resetScroll:true});
+        $("topic-folder-search").focus();
+      }));
+      target.append(state);
+    }
+    target.scrollTop = scroll;
+    if (focusedPin || focusedFolder) {
+      const controls = target.querySelectorAll(focusedPin ? "[data-pin-path]" : "[data-topic-path]");
+      const replacement = [...controls].find(node => focusedPin ? node.dataset.pinPath === focusedPin : node.dataset.topicPath === focusedFolder);
+      (replacement || $("topic-folder-filter")).focus({preventScroll:true});
+    }
   }
   function headings() {
     const folder = currentFolder();
+    $("topic-conversation-search").placeholder = selectedTopic ? "Найти в беседах папки" : "Найти в беседах";
+    $("topic-conversation-search").setAttribute("aria-label", selectedTopic ? "Поиск по беседам папки" : "Поиск по беседам");
     $("topic-window-title").textContent = selectedTopic
       ? folder?.name || selectedTopic.split(" / ").at(-1)
       : "Беседы";
@@ -102,32 +172,23 @@
       overview = data;
       $("knowledge-count").textContent =
         quantity(data.total, ["знание", "знания", "знаний"]) + " · " + quantity(data.roots.length, ["тема", "темы", "тем"]);
-      const target = $("topic-folders");
-      target.replaceChildren();
-      for (const path of data.roots) {
-        const folder = data.folders.find((f) => f.path === path);
-        if (folder) target.append(folderButton(folder));
-      }
-      if (!data.roots.length)
-        target.append(
-          empty(
-            "Здесь появятся темы памяти",
-            "Добавьте знание или извлеките сведения из переписки.",
-          ),
-        );
+      renderFolders();
       if (dialog.open) {
         headings();
         if (mode === "attention") renderAttention();
       }
       void UI.knowledge.refreshExtraction();
     } catch (error) {
-      if (ticket === overviewRequest)
+      if (ticket === overviewRequest) {
+        folderFingerprint = "";
         $("topic-folders").replaceChildren(
           empty("Не удалось открыть темы", error.message),
         );
+      }
     }
   }
   function chooseMode(value) {
+    if (value !== "conversations") clearTimeout(conversationSearchTimer);
     mode = value;
     if (!selectedTopic)
       $("topic-window-title").textContent =
@@ -142,6 +203,8 @@
     $("topic-window-status").textContent = "";
   }
   async function open(path) {
+    clearTimeout(conversationSearchTimer);
+    $("topic-conversation-search").value = "";
     selectedTopic = path;
     reading = null;
     ++conversationRequest;
@@ -260,6 +323,7 @@
     }
   }
   function conversationRow(conversation, { archive = false } = {}) {
+    const query = archive ? $("archive-search").value : $("topic-conversation-search").value;
     const row = action(
       "",
       () =>
@@ -277,7 +341,7 @@
     content.className = "archive-text";
     const title = text("p", "");
     title.append(
-      UI.mark(conversation.title, archive ? $("archive-search").value : ""),
+      UI.mark(conversation.title, query),
     );
     content.append(
       title,
@@ -289,14 +353,26 @@
             : ""),
       ),
     );
-    if (conversation.snippet)
-      content.append(text("span", conversation.snippet, "conversation-match"));
+    if (conversation.snippet) {
+      const snippet = text("span", "", "conversation-match");
+      snippet.append(UI.mark(conversation.snippet, query));
+      content.append(snippet);
+    }
     row.append(symbol, content);
     return row;
   }
   async function loadConversations(append = false) {
     const ticket = ++conversationRequest;
-    if (!append) conversationOffset = 0;
+    const query = $("topic-conversation-search").value.trim();
+    const more = $("topic-conversation-more");
+    more.disabled = true;
+    if (!append) {
+      conversationOffset = 0;
+      more.hidden = true;
+      $("topic-conversation-results").textContent = "";
+    }
+    reading = null;
+    $("topic-conversation-tools").hidden = false;
     $("topic-conversation-reader").hidden = true;
     $("topic-conversation-list").hidden = false;
     try {
@@ -304,6 +380,7 @@
         "/api/conversations/grouped?" +
           new URLSearchParams({
             topic: selectedTopic,
+            q: query,
             offset: String(conversationOffset),
             limit: "30",
           }),
@@ -315,27 +392,34 @@
       )
         return;
       const target = $("topic-conversation-list");
+      $("topic-window-status").textContent = "";
+      $("topic-conversation-results").textContent = query ? "Найдено бесед: " + data.total : "";
       if (!append) target.replaceChildren();
       for (const conversation of data.conversations)
         target.append(conversationRow(conversation));
       conversationOffset += data.conversations.length;
-      $("topic-conversation-more").hidden = conversationOffset >= data.total;
+      more.hidden = conversationOffset >= data.total;
+      more.disabled = false;
       if (!conversationOffset)
         target.append(
           empty(
-            "Связанных бесед пока нет",
-            "Беседы связываются с темой по исходным сообщениям сохранённых знаний.",
+            query ? "В этой папке совпадений нет" : "Связанных бесед пока нет",
+            query ? "Попробуйте другое слово или сбросьте поиск." : "Беседы связываются с темой по исходным сообщениям сохранённых знаний.",
           ),
         );
     } catch (error) {
-      if (ticket === conversationRequest)
-        $("topic-conversation-list").replaceChildren(
+      if (ticket === conversationRequest) {
+        more.disabled = false;
+        if (append) $("topic-window-status").textContent = error.message;
+        else $("topic-conversation-list").replaceChildren(
           empty("Не удалось открыть беседы", error.message),
         );
+      }
     }
   }
   function renderReader(data, anchorId) {
     reading = data;
+    $("topic-conversation-tools").hidden = true;
     $("topic-conversation-list").hidden = true;
     $("topic-conversation-more").hidden = true;
     $("topic-conversation-reader").hidden = false;
@@ -416,6 +500,8 @@
     id,
     { topic = selectedTopic, offset = 0, messageId } = {},
   ) {
+    clearTimeout(conversationSearchTimer);
+    if (selectedTopic !== topic) $("topic-conversation-search").value = "";
     selectedTopic = topic;
     const select = $("knowledge-topic-filter");
     if (topic && ![...select.options].some((o) => o.value === topic))
@@ -426,6 +512,7 @@
     if (!dialog.open) dialog.showModal();
     const ticket = ++conversationRequest;
     $("topic-conversation-reader").hidden = true;
+    $("topic-conversation-tools").hidden = true;
     $("topic-conversation-more").hidden = true;
     $("topic-conversation-list").replaceChildren();
     $("topic-conversation-list").hidden = false;
@@ -447,6 +534,7 @@
     }
   }
   async function openSource(messageId, factId) {
+    clearTimeout(conversationSearchTimer);
     const ticket = ++conversationRequest;
     try {
       const data = await api(
@@ -462,7 +550,9 @@
   }
   async function loadArchive(append = false) {
     const ticket = ++archiveRequest;
-    if (!append) archiveOffset = 0;
+    const more = $("archive-more");
+    more.disabled = true;
+    if (!append) { archiveOffset = 0; more.hidden = true; }
     try {
       const data = await api(
         "/api/conversations/grouped?" +
@@ -478,7 +568,8 @@
       for (const conversation of data.conversations)
         target.append(conversationRow(conversation, { archive: true }));
       archiveOffset += data.conversations.length;
-      $("archive-more").hidden = archiveOffset >= data.total;
+      more.hidden = archiveOffset >= data.total;
+      more.disabled = false;
       $("archive-summary").textContent = "Бесед: " + data.total;
       if (!archiveOffset)
         target.append(
@@ -490,10 +581,13 @@
           ),
         );
     } catch (error) {
-      if (ticket === archiveRequest)
-        $("archive-list").replaceChildren(
+      if (ticket === archiveRequest) {
+        more.disabled = false;
+        if (append) $("archive-summary").textContent = error.message;
+        else $("archive-list").replaceChildren(
           empty("Не удалось открыть беседы", error.message),
         );
+      }
     }
   }
   $("topic-window-close").addEventListener("click", close);
@@ -501,6 +595,7 @@
     if (event.key === "Escape") event.stopPropagation();
   });
   dialog.addEventListener("close", () => {
+    clearTimeout(conversationSearchTimer);
     ++conversationRequest;
     UI.knowledge.closeDetail();
     $("topic-window-status").textContent = "";
@@ -562,7 +657,25 @@
   $("archive-more").addEventListener("click", () => void loadArchive(true));
   $("archive-search").addEventListener("input", () => {
     clearTimeout(searchTimer);
+    ++archiveRequest;
+    $("archive-more").hidden = true;
+    $("archive-more").disabled = true;
     searchTimer = setTimeout(() => void loadArchive(), 150);
+  });
+  $("topic-conversation-search").addEventListener("input", () => {
+    clearTimeout(conversationSearchTimer);
+    ++conversationRequest;
+    $("topic-conversation-more").hidden = true;
+    $("topic-conversation-more").disabled = true;
+    conversationSearchTimer = setTimeout(() => void loadConversations(), 180);
+  });
+  $("topic-folder-search").addEventListener("input", () => renderFolders({resetScroll:true}));
+  $("topic-folder-filter").addEventListener("change", () => renderFolders({resetScroll:true}));
+  addEventListener("storage", (event) => {
+    if (event.key !== preferencesKey && event.key !== null) return;
+    try { preferences = navigation.normalize(JSON.parse(localStorage.getItem(preferencesKey))); }
+    catch { preferences = navigation.normalize(null); }
+    renderFolders();
   });
   UI.topics = {
     load,

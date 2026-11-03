@@ -9,6 +9,16 @@ const plain = (value) =>
     .trim();
 const cut = (value, size) =>
   value.length > size ? value.slice(0, size - 1).trimEnd() + "…" : value;
+function matchSnippet(value, query) {
+  const content = String(value || "")
+    .replace(/```[^\n`]*\n?/g, " ")
+    .replace(/[*`#]+/g, "")
+    .replace(/\s+/gu, " ")
+    .trim();
+  const position = content.toLocaleLowerCase("ru").indexOf(query);
+  const start = Math.max(0, position - 45);
+  return (start ? "…" : "") + cut(content.slice(start), 160);
+}
 export function groupConversations(messages, { gapMs = 30 * 60 * 1000 } = {}) {
   const groups = [],
     named = new Map();
@@ -155,13 +165,11 @@ export function listConversations(
           )?.id
         : null,
       snippet: query
-        ? cut(
-            plain(
-              group.messages.find((m) =>
-                String(m.content).toLocaleLowerCase("ru").includes(query),
-              )?.content,
-            ),
-            160,
+        ? matchSnippet(
+            group.messages.find((m) =>
+              String(m.content).toLocaleLowerCase("ru").includes(query),
+            )?.content,
+            query,
           )
         : "",
     })),
