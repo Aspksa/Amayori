@@ -110,3 +110,6 @@ document.addEventListener('keydown', event => {
   if (target instanceof HTMLElement && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))) return;
   void refresh();
 });
+
+// The explorer remains available when 3D cannot initialize.
+void import('/golem-network-explorer.js').catch(error => console.warn('Golem network explorer:', error));
