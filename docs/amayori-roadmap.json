@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0.0",
   "project": "Aspksa/Amayori",
-  "version": "0.13.0",
+  "version": "0.14.0",
   "updated_at": "2026-11-03",
   "language": "ru",
   "objective": "Единый развивающийся ИИ-мозг: Cloud.ru сейчас, проверяемое дообучение позже",
@@ -40,7 +40,8 @@
     {"id": "golem-galaxy", "status": "merged", "prs": [50, 51, 52], "description": "Голем стал галактикой: свет и объём, канал событий и стриминг, звёзды с планетами и собственные созвездия"},
     {"id": "workspace-0-10", "status": "merged", "prs": [53], "description": "Чат рядом с картой или архивом, изменяемые пропорции и личное левое меню"},
     {"id": "knowledge-0-11", "status": "merged", "prs": [54], "description": "Карточки знаний с источниками и историей, объединение повторов, авторазбор сообщений и перенос в базу"},
-    {"id": "forgetting-and-conversations", "status": "merged", "description": "Удаление сообщений, диалогов и знаний; отдельные диалоги; страничный архив с поиском на сервере; резервная копия вместе с PostgreSQL; pgvector в CI и аудит зависимостей"}
+    {"id": "forgetting-and-conversations", "status": "merged", "description": "Удаление сообщений, диалогов и знаний; отдельные диалоги; страничный архив с поиском на сервере; резервная копия вместе с PostgreSQL; pgvector в CI и аудит зависимостей"},
+    {"id": "topic-folders-0-13", "status": "implemented", "description": "Темы-папки, компактные знания, конкретные вопросы и связанные беседы в одном центральном окне"}
   ],
   "pending_pull_requests": [],
   "roadmap": [

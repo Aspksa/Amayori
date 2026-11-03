@@ -156,7 +156,7 @@
               ><span class="sr-only">Рядом с диалогом</span
               ><select id="workspace-context">
                 <option value="graph">Карта знаний</option>
-                <option value="archive">Архив</option>
+                <option value="archive">Беседы</option>
               </select></label
             >
           </div>
@@ -169,7 +169,7 @@
           aria-label="Память"
           hidden
         >
-          <div class="workspace-pane-title">Архив</div>
+          <div class="workspace-pane-title">Беседы</div>
           <div class="view-toolbar">
             <div class="tabs" role="tablist" aria-label="Разделы памяти">
               <a
@@ -179,7 +179,7 @@
                 aria-controls="memory-archive"
                 aria-selected="true"
                 data-tab="archive"
-                >Архив</a
+                >Беседы</a
               ><a
                 href="#memory/facts"
                 role="tab"
@@ -247,8 +247,8 @@
                   ><input
                     id="archive-search"
                     type="search"
-                    placeholder="Найти в переписке"
-                    aria-label="Поиск по загруженному архиву" /></label
+                    placeholder="Найти в беседах"
+                    aria-label="Поиск по всем беседам" /></label
                 ><span id="archive-summary" class="muted small-text"></span>
               </div>
               <div
@@ -256,6 +256,14 @@
                 class="archive-list scroll-area"
                 aria-live="polite"
               ></div>
+              <button
+                id="archive-more"
+                class="text-button"
+                type="button"
+                hidden
+              >
+                Показать ещё беседы
+              </button>
             </div>
             <div
               id="memory-facts"
@@ -294,83 +302,16 @@
                   </button>
                 </div>
               </div>
-              <form id="facts-search-form" class="knowledge-filters">
-                <label class="search-field"
-                  ><svg aria-hidden="true" class="icon">
-                    <use href="/icons.svg#search"></use></svg
-                  ><input
-                    id="facts-search"
-                    type="search"
-                    placeholder="Сущность, факт или тема"
-                    aria-label="Поиск знаний"
-                    maxlength="200"
-                /></label>
-                <select id="knowledge-topic-filter" aria-label="Тема знаний">
-                  <option value="">Все темы</option>
-                </select>
-                <select id="knowledge-kind-filter" aria-label="Тип знания">
-                  <option value="">Все типы</option>
-                  <option value="project">Проекты</option>
-                  <option value="person">Люди</option>
-                  <option value="preference">Предпочтения</option>
-                  <option value="task">Задачи</option>
-                  <option value="decision">Решения</option>
-                  <option value="general">Общее</option>
-                </select>
-                <select
-                  id="knowledge-status-filter"
-                  aria-label="Состояние знания"
-                >
-                  <option value="active">Актуальные</option>
-                  <option value="candidate">Расхождения</option>
-                  <option value="superseded">История</option>
-                  <option value="all">Все версии</option>
-                </select>
-                <button class="button subtle" type="submit">Найти</button>
-              </form>
               <p
                 id="knowledge-extraction-status"
                 class="knowledge-extraction-status"
                 role="status"
               ></p>
-              <div id="knowledge-body" class="knowledge-body">
-                <div class="knowledge-list-pane">
-                  <div
-                    id="facts-list"
-                    class="facts-list scroll-area"
-                    aria-live="polite"
-                  ></div>
-                  <button
-                    id="knowledge-more"
-                    type="button"
-                    class="text-button"
-                    hidden
-                  >
-                    Показать ещё
-                  </button>
-                </div>
-                <aside
-                  id="knowledge-detail"
-                  class="knowledge-detail"
-                  aria-labelledby="knowledge-detail-title"
-                  hidden
-                >
-                  <div class="knowledge-detail-heading">
-                    <span id="knowledge-detail-title">Карточка знания</span
-                    ><button
-                      id="knowledge-detail-close"
-                      class="icon-button"
-                      aria-label="Закрыть карточку знания"
-                      type="button"
-                    >
-                      <svg class="icon" aria-hidden="true">
-                        <use href="/icons.svg#close"></use>
-                      </svg>
-                    </button>
-                  </div>
-                  <div id="knowledge-detail-content" class="scroll-area"></div>
-                </aside>
-              </div>
+              <div
+                id="topic-folders"
+                class="topic-folders scroll-area"
+                aria-live="polite"
+              ></div>
             </div>
             <div
               id="memory-quality"
@@ -739,7 +680,7 @@
                       ><span><strong>Рядом с диалогом</strong></span
                       ><select id="workspace-target">
                         <option value="graph">Карта знаний</option>
-                        <option value="archive">Архив</option>
+                        <option value="archive">Беседы</option>
                       </select></label
                     ><label class="setting-row" for="workspace-chat-side"
                       ><span><strong>Сторона диалога</strong></span
@@ -900,6 +841,180 @@
     </nav>
     <div id="toast" class="toast" role="status" hidden></div>
     <dialog
+      id="topic-window"
+      class="topic-window"
+      aria-labelledby="topic-window-title"
+    >
+      <header class="topic-window-header">
+        <div class="topic-window-heading">
+          <button id="topic-parent" type="button" class="text-button" hidden>
+            К темам
+          </button>
+          <h2 id="topic-window-title">Тема</h2>
+        </div>
+        <button
+          id="topic-window-close"
+          class="icon-button"
+          type="button"
+          aria-label="Закрыть папку"
+        >
+          <svg class="icon" aria-hidden="true">
+            <use href="/icons.svg#close"></use>
+          </svg>
+        </button>
+      </header>
+      <div id="topic-children" class="topic-children" hidden></div>
+      <nav class="topic-window-tabs" aria-label="Содержимое папки">
+        <button id="topic-tab-knowledge" type="button" aria-pressed="true">
+          Знания <span id="topic-knowledge-count"></span></button
+        ><button
+          id="topic-tab-conversations"
+          type="button"
+          aria-pressed="false"
+        >
+          Беседы <span id="topic-conversation-count"></span></button
+        ><button
+          id="topic-tab-attention"
+          type="button"
+          aria-pressed="false"
+          hidden
+        >
+          Требует внимания <span id="topic-attention-count"></span>
+        </button>
+      </nav>
+      <div id="topic-panel-knowledge" class="topic-window-panel">
+        <form id="facts-search-form" class="knowledge-filters">
+          <label class="search-field"
+            ><svg aria-hidden="true" class="icon">
+              <use href="/icons.svg#search"></use></svg
+            ><input
+              id="facts-search"
+              type="search"
+              placeholder="Сущность, факт или тема"
+              aria-label="Поиск знаний"
+              maxlength="200"
+          /></label>
+          <select id="knowledge-topic-filter" aria-label="Тема знаний">
+            <option value="">Все темы</option>
+          </select>
+          <select id="knowledge-kind-filter" aria-label="Тип знания">
+            <option value="">Все типы</option>
+            <option value="project">Проекты</option>
+            <option value="person">Люди</option>
+            <option value="preference">Предпочтения</option>
+            <option value="task">Задачи</option>
+            <option value="decision">Решения</option>
+            <option value="general">Общее</option>
+          </select>
+          <select id="knowledge-status-filter" aria-label="Состояние знания">
+            <option value="active">Актуальные</option>
+            <option value="candidate">Расхождения</option>
+            <option value="superseded">История</option>
+            <option value="all">Все версии</option>
+          </select>
+          <button class="button subtle" type="submit">Найти</button>
+        </form>
+        <div id="knowledge-body" class="knowledge-body">
+          <div class="knowledge-list-pane">
+            <div
+              id="facts-list"
+              class="facts-list scroll-area"
+              aria-live="polite"
+            ></div>
+            <button
+              id="knowledge-more"
+              type="button"
+              class="text-button"
+              hidden
+            >
+              Показать ещё
+            </button>
+          </div>
+          <aside
+            id="knowledge-detail"
+            class="knowledge-detail"
+            aria-labelledby="knowledge-detail-title"
+            hidden
+          >
+            <div class="knowledge-detail-heading">
+              <span id="knowledge-detail-title">Карточка знания</span
+              ><button
+                id="knowledge-detail-close"
+                class="icon-button"
+                aria-label="Закрыть карточку знания"
+                type="button"
+              >
+                <svg class="icon" aria-hidden="true">
+                  <use href="/icons.svg#close"></use>
+                </svg>
+              </button>
+            </div>
+            <div id="knowledge-detail-content" class="scroll-area"></div>
+          </aside>
+        </div>
+      </div>
+      <div id="topic-panel-conversations" class="topic-window-panel" hidden>
+        <div
+          id="topic-conversation-list"
+          class="topic-conversation-list scroll-area"
+        ></div>
+        <button
+          id="topic-conversation-more"
+          class="text-button"
+          type="button"
+          hidden
+        >
+          Показать ещё беседы
+        </button>
+        <section
+          id="topic-conversation-reader"
+          class="conversation-reader"
+          hidden
+        >
+          <div class="conversation-reader-heading">
+            <button
+              id="topic-conversation-back"
+              class="text-button"
+              type="button"
+            >
+              К беседам</button
+            ><span id="topic-conversation-meta" class="muted small-text"></span>
+          </div>
+          <h3 id="topic-conversation-title"></h3>
+          <div
+            id="topic-conversation-messages"
+            class="scroll-area"
+            aria-live="polite"
+          ></div>
+          <div class="conversation-pagination">
+            <button
+              id="topic-conversation-previous"
+              class="button subtle"
+              type="button"
+            >
+              Ранее</button
+            ><span
+              id="topic-conversation-position"
+              class="muted small-text"
+            ></span
+            ><button
+              id="topic-conversation-next"
+              class="button subtle"
+              type="button"
+            >
+              Далее
+            </button>
+          </div>
+        </section>
+      </div>
+      <div
+        id="topic-panel-attention"
+        class="topic-window-panel scroll-area"
+        hidden
+      ></div>
+      <p id="topic-window-status" class="inline-status" role="status"></p>
+    </dialog>
+    <dialog
       id="knowledge-add-dialog"
       class="knowledge-dialog"
       aria-labelledby="knowledge-add-title"
@@ -1026,6 +1141,7 @@
     <script src="/workspace-prefs.js" defer></script>
     <script src="/workspace.js" defer></script>
     <script src="/knowledge.js" defer></script>
+    <script src="/topics.js" defer></script>
     <script src="/app.js" defer></script>
     <script src="/chat-avatar.js" defer></script>
     <script src="/knowledge-map.js" defer></script>

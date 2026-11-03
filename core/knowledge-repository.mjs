@@ -1,5 +1,6 @@
 import { read, write, serialized, postgresCanonical } from "./store.mjs";
 import { ensureKnowledgeTables } from "./postgres.mjs";
+import { organizeTopics, resolveTopic, mergeTopics } from "./topic-model.mjs";
 import {
   hydrate,
   cleanFact,
@@ -172,9 +173,51 @@ export function createKnowledgeRepository({
       );
     },
     async compact() {
+      return mutate((facts) => {
+        const now = new Date().toISOString();
+        organizeTopics(facts, now);
+        consolidateFacts(facts, now);
+      });
+    },
+    async mergeTopics(from, to) {
+      if (
+        typeof from !== "string" ||
+        typeof to !== "string" ||
+        from.length > 100 ||
+        to.length > 100
+      )
+        throw invalid("Укажите две темы до 100 символов");
       return mutate((facts) =>
-        consolidateFacts(facts, new Date().toISOString()),
+        mergeTopics(facts, from, to, new Date().toISOString()),
       );
+    },
+    async setTopic(id, topic) {
+      if (typeof topic !== "string" || !topic.trim() || topic.length > 100)
+        throw invalid("Укажите тему до 100 символов");
+      return mutate((facts) => {
+        const fact = facts.find((f) => String(f.id) === String(id));
+        if (!fact)
+          throw Object.assign(Error("Знание не найдено"), { statusCode: 404 });
+        if (["merged", "rejected"].includes(fact.status))
+          throw invalid("Измените тему действующей карточки");
+        const target = resolveTopic(topic, facts),
+          previous = fact.topic;
+        fact.topics = [
+          ...new Set([
+            target,
+            ...(fact.topics || []).filter((t) => t !== previous),
+          ]),
+        ];
+        fact.topic = target;
+        fact.updated_at = new Date().toISOString();
+        fact.events.push({
+          type: "topic-assigned",
+          from: previous,
+          to: target,
+          at: fact.updated_at,
+        });
+        return fact;
+      });
     },
     async save(inputs, source = { kind: "user-confirmed", excerpt: "" }) {
       if (!Array.isArray(inputs) || inputs.length > 20)
@@ -193,11 +236,18 @@ export function createKnowledgeRepository({
       };
       return mutate(
         (facts, allocateId) =>
-          upsertFacts(facts, validated, {
-            source: provenance,
-            now,
-            allocateId,
-          }),
+          upsertFacts(
+            facts,
+            validated.map((input) => ({
+              ...input,
+              topic: resolveTopic(input.topic, facts),
+            })),
+            {
+              source: provenance,
+              now,
+              allocateId,
+            },
+          ),
         inputs.length,
       );
     },
