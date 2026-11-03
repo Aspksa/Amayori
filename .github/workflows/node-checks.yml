@@ -15,7 +15,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     services:
       postgres:
-        image: ${{ matrix.os == 'ubuntu-latest' && 'postgres:16' || '' }}
+        image: ${{ matrix.os == 'ubuntu-latest' && 'pgvector/pgvector:pg16' || '' }}
         env:
           POSTGRES_USER: amayori_test
           POSTGRES_PASSWORD: test_only
@@ -36,6 +36,8 @@ jobs:
         env:
           AMAYORI_TEST_DATABASE_URL: ${{ runner.os == 'Linux' && 'postgresql://amayori_test:test_only@127.0.0.1:5432/amayori_test' || '' }}
       - run: npm run test:syntax
+      - name: Audit runtime dependencies
+        run: npm audit --omit=dev --audit-level=high
       - name: Install browser for interface checks
         if: runner.os == 'Linux'
         run: npx playwright install chromium --with-deps --only-shell
