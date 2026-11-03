@@ -106,18 +106,23 @@ const pointShader = () => new THREE.ShaderMaterial({
 });
 
 // Stars are solid so they can be picked and shaded; the glow layer is the flare.
-// Five pointed stellar silhouettes replace spherical dots; instancing keeps draw calls low.
+// Astronomical diffraction-star silhouettes replace spherical dots; instancing keeps draw calls low.
 function stellarGeometry() {
+  // Eight alternating rays: four long diffraction spikes and four shorter ones.
+  // A small bright centre keeps the silhouette recognisable even when zoomed out.
   const shape = new THREE.Shape();
-  for (let point = 0; point < 10; point++) {
-    const angle = -Math.PI / 2 + point * Math.PI / 5;
-    const radius = point % 2 ? 0.43 : 1;
+  for (let point = 0; point < 16; point++) {
+    const angle = -Math.PI / 2 + point * Math.PI / 8;
+    const radius = point % 2 ? 0.17 : point % 4 === 0 ? 1.0 : 0.56;
     const x = Math.cos(angle) * radius, y = Math.sin(angle) * radius;
-    if (point === 0) shape.moveTo(x, y);
+    if (!point) shape.moveTo(x, y);
     else shape.lineTo(x, y);
   }
   shape.closePath();
-  const geometry = new THREE.ExtrudeGeometry(shape, {depth:0.12,bevelEnabled:true,bevelThickness:0.1,bevelSize:0.1,bevelSegments:1,steps:1,curveSegments:1});
+  const geometry = new THREE.ExtrudeGeometry(shape, {
+    depth: 0.07, bevelEnabled: true, bevelThickness: 0.045,
+    bevelSize: 0.045, bevelSegments: 1, steps: 1,
+  });
   geometry.center();
   return geometry;
 }
