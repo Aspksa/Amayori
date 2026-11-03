@@ -11,6 +11,7 @@ const {database, initDatabase, databaseStatus, insertMemory, searchMemory,
 
 const axis = (position) => Array.from({length: EMBEDDING_DIMENSIONS}, (_, i) => (i === position ? 1 : 0));
 const MARK = 'pgvector-check-';
+let ran = false;
 
 test('the vector extension is really available and a memory round-trips', {skip: !url}, async (t) => {
   t.after(async () => {
@@ -47,4 +48,12 @@ test('the vector extension is really available and a memory round-trips', {skip:
   assert.ok(vector.indexed >= 2);
 
   await assert.rejects(() => insertMemory('user', MARK + 'плохой', [1, 2, 3]), /384/);
+  ran = true;
+});
+
+// A skipped test reads exactly like a passing one in a green build. If a database
+// is configured and the check above did not run, that is a failure, not silence.
+test('the vector check is not silently skipped where a database is configured', () => {
+  if (!url) return;
+  assert.equal(ran, true, 'векторная проверка обязана выполниться при настроенной базе');
 });
