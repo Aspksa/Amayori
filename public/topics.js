@@ -364,7 +364,13 @@
   async function loadConversations(append = false) {
     const ticket = ++conversationRequest;
     const query = $("topic-conversation-search").value.trim();
-    if (!append) conversationOffset = 0;
+    const more = $("topic-conversation-more");
+    more.disabled = true;
+    if (!append) {
+      conversationOffset = 0;
+      more.hidden = true;
+      $("topic-conversation-results").textContent = "";
+    }
     reading = null;
     $("topic-conversation-tools").hidden = false;
     $("topic-conversation-reader").hidden = true;
@@ -392,7 +398,8 @@
       for (const conversation of data.conversations)
         target.append(conversationRow(conversation));
       conversationOffset += data.conversations.length;
-      $("topic-conversation-more").hidden = conversationOffset >= data.total;
+      more.hidden = conversationOffset >= data.total;
+      more.disabled = false;
       if (!conversationOffset)
         target.append(
           empty(
@@ -401,10 +408,13 @@
           ),
         );
     } catch (error) {
-      if (ticket === conversationRequest)
-        $("topic-conversation-list").replaceChildren(
+      if (ticket === conversationRequest) {
+        more.disabled = false;
+        if (append) $("topic-window-status").textContent = error.message;
+        else $("topic-conversation-list").replaceChildren(
           empty("Не удалось открыть беседы", error.message),
         );
+      }
     }
   }
   function renderReader(data, anchorId) {
@@ -540,7 +550,9 @@
   }
   async function loadArchive(append = false) {
     const ticket = ++archiveRequest;
-    if (!append) archiveOffset = 0;
+    const more = $("archive-more");
+    more.disabled = true;
+    if (!append) { archiveOffset = 0; more.hidden = true; }
     try {
       const data = await api(
         "/api/conversations/grouped?" +
@@ -556,7 +568,8 @@
       for (const conversation of data.conversations)
         target.append(conversationRow(conversation, { archive: true }));
       archiveOffset += data.conversations.length;
-      $("archive-more").hidden = archiveOffset >= data.total;
+      more.hidden = archiveOffset >= data.total;
+      more.disabled = false;
       $("archive-summary").textContent = "Бесед: " + data.total;
       if (!archiveOffset)
         target.append(
@@ -568,10 +581,13 @@
           ),
         );
     } catch (error) {
-      if (ticket === archiveRequest)
-        $("archive-list").replaceChildren(
+      if (ticket === archiveRequest) {
+        more.disabled = false;
+        if (append) $("archive-summary").textContent = error.message;
+        else $("archive-list").replaceChildren(
           empty("Не удалось открыть беседы", error.message),
         );
+      }
     }
   }
   $("topic-window-close").addEventListener("click", close);
@@ -641,11 +657,16 @@
   $("archive-more").addEventListener("click", () => void loadArchive(true));
   $("archive-search").addEventListener("input", () => {
     clearTimeout(searchTimer);
+    ++archiveRequest;
+    $("archive-more").hidden = true;
+    $("archive-more").disabled = true;
     searchTimer = setTimeout(() => void loadArchive(), 150);
   });
   $("topic-conversation-search").addEventListener("input", () => {
     clearTimeout(conversationSearchTimer);
     ++conversationRequest;
+    $("topic-conversation-more").hidden = true;
+    $("topic-conversation-more").disabled = true;
     conversationSearchTimer = setTimeout(() => void loadConversations(), 180);
   });
   $("topic-folder-search").addEventListener("input", () => renderFolders({resetScroll:true}));

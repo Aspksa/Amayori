@@ -1729,7 +1729,14 @@ try {
   const navMessages = Array.from({length:34},(_,i)=>({id:"nav-"+i,conversation:"nav-conversation-"+i,role:"user",content:i===0?"Вводный текст ".repeat(60)+"Уникальная строка <img src=x onerror=alert(1)>":"Разговор о дизайне "+i,at:new Date(Date.UTC(2026,0,1,0,i)).toISOString()}));
   navMessages.push({id:"foreign",conversation:"foreign",role:"user",content:"Уникальная строка из другой темы",at:"2026-02-01"});
   const navGroups = groupConversations(navMessages).map(g=>({...g,topics:[g.canonicalId==="foreign"?"Другая тема":"Amayori / Дизайн"]}));
-  await navContext.route("**/api/conversations/grouped?*",route=>route.fulfill({json:listConversations(navGroups,Object.fromEntries(new URL(route.request().url()).searchParams))}));
+  let releaseNavSearch, navSearchCalls=0, failNavOlder=true;
+  const navSearchGate=new Promise(resolve=>{releaseNavSearch=resolve;});
+  await navContext.route("**/api/conversations/grouped?*",async route=>{
+    const params=new URL(route.request().url()).searchParams;
+    if(Number(params.get("offset"))>0&&failNavOlder){failNavOlder=false;return route.fulfill({status:503,json:{error:"Страница временно недоступна"}});}
+    if(params.get("q")==="уникальная строка"){navSearchCalls++;await navSearchGate;}
+    return route.fulfill({json:listConversations(navGroups,Object.fromEntries(params))});
+  });
   await navContext.route("**/api/conversations/item?*",route=>{
     const params=new URL(route.request().url()).searchParams;
     return route.fulfill({json:conversationPage(navGroups,params.get("id"),Object.fromEntries(params))});
@@ -1793,8 +1800,20 @@ try {
   await navPage.locator("#topic-tab-conversations").click();
   await navPage.waitForFunction(()=>document.querySelectorAll("#topic-conversation-list .conversation-item").length===30);
   await navPage.locator("#topic-conversation-more").click();
+  await navPage.locator("#topic-window-status").filter({hasText:"Страница временно недоступна"}).waitFor();
+  assert.equal(await navPage.locator("#topic-conversation-list .conversation-item").count(),30,"a failed page preserves earlier results");
+  await navPage.locator("#topic-conversation-more:not([disabled])").click();
   await navPage.waitForFunction(()=>document.querySelectorAll("#topic-conversation-list .conversation-item").length===34);
+  await navPage.locator("#topic-tab-conversations").click();
+  await navPage.waitForFunction(()=>document.querySelectorAll("#topic-conversation-list .conversation-item").length===30);
+  const navSearchRequest=navPage.waitForRequest(r=>new URL(r.url()).searchParams.get("q")==="уникальная строка");
   await navPage.locator("#topic-conversation-search").fill("уникальная строка");
+  assert.equal(await navPage.locator("#topic-conversation-more").isDisabled(),true,"query changes lock pagination immediately");
+  await navSearchRequest;
+  assert.equal(await navPage.locator("#topic-conversation-more").isDisabled(),true,"pagination stays locked while replacement results are pending");
+  await navPage.evaluate(()=>document.getElementById("topic-conversation-more").click());
+  assert.equal(navSearchCalls,1,"the old pagination button cannot invalidate the replacement request");
+  releaseNavSearch();
   await navPage.waitForFunction(()=>document.querySelectorAll("#topic-conversation-list .conversation-item").length===1);
   assert.equal(await navPage.locator("#topic-conversation-more").isVisible(),false);
   assert.equal(await navPage.locator("#topic-conversation-list mark").textContent(),"Уникальная строка");
