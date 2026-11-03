@@ -28,12 +28,14 @@ try {
 } catch (error) { console.warn('Golem settings:', error.message); }
 
 const MAX_STARS = 1200, MAX_PLANETS = 1500, MAX_LINKS = 700, MAX_SIGNALS = 40, GAS = 5200;
-const STAR_TONES = [0xfff4dc, 0xf2cd87, 0xe8b96a, 0xd7c49a, 0xc89a55, 0xbfae84];
+// Stellar spectral palette: blue-white, white, warm yellow, orange and red.
+const STAR_TONES = [0xaacaff, 0xe0eeff, 0xfff8e7, 0xffe3a5, 0xffbb79, 0xff8c78];
 const FLARE = 0xfff0c4;
 const DIM = 0x6b4a33;
 const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x02040e);
 const camera = new THREE.PerspectiveCamera(46, 1, 0.1, 9000);
 const galaxy = new THREE.Group();
 scene.add(galaxy);
@@ -194,6 +196,7 @@ gasPoints.frustumCulled = false;
 galaxy.add(gasPoints);
 
 const nebulaMaterial = new THREE.SpriteMaterial({map: haze, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false});
+const NEBULA_TONES = [0x416edc, 0x7448c5, 0xb34794, 0x1e9eae, 0xd48a49, 0x4568a3];
 const nebulae = [];
 for (let i = 0; i < 14; i++) {
   const cloud = new THREE.Sprite(nebulaMaterial.clone());
@@ -355,8 +358,11 @@ function placeGas(count) {
     gasPos[i * 3 + 1] = (a - 0.5) * 2 * flat;
     gasPos[i * 3 + 2] = Math.sin(theta) * radius + (c - 0.5) * 30;
     gasSize[i] = (2.4 + b * 3.2) * (inDisc ? 1 : 0.55);
-    const warm = inDisc ? 0.8 : 0.5;
-    gasTone[i * 3] = 0.5 * warm; gasTone[i * 3 + 1] = 0.43 * warm; gasTone[i * 3 + 2] = 0.34 * warm;
+    const spectral = new THREE.Color(STAR_TONES[Math.floor(hash('spectrum' + i, 19) * STAR_TONES.length)]);
+    const intensity = inDisc ? 0.7 : 0.32;
+    gasTone[i * 3] = spectral.r * intensity;
+    gasTone[i * 3 + 1] = spectral.g * intensity;
+    gasTone[i * 3 + 2] = spectral.b * intensity;
   }
   gasGeometry.attributes.position.needsUpdate = true;
   gasGeometry.attributes.size.needsUpdate = true;
@@ -369,11 +375,13 @@ function placeGas(count) {
     cloud.position.set(Math.cos(theta) * radius, (b - 0.5) * 26, Math.sin(theta) * radius);
     const scale = spread * (0.3 + b * 0.55);
     cloud.scale.set(scale, scale, 1);
-    cloud.material.opacity = 0.08 + a * 0.12;
+    cloud.material.color.setHex(NEBULA_TONES[i % NEBULA_TONES.length]);
+    cloud.material.opacity = 0.11 + a * 0.13;
     cloud.visible = true;
   }
   bulge.scale.setScalar(spread * (0.3 + structure * 0.25));
-  bulge.material.opacity = 0.3 + structure * 0.4;
+  bulge.material.color.setHex(0xd4b6e9);
+  bulge.material.opacity = 0.24 + structure * 0.3;
 }
 
 // Figures connect bright stars inside one region, so a constellation never
@@ -433,8 +441,8 @@ function paintStars() {
     const heat = Math.min(1, starUses[i] / 10);
     if (stars[i].dead) tint.setHex(DIM).multiplyScalar(0.6);
     else {
-      tint.setHex(region ? region.tone : STAR_TONES[0]);
-      tint.lerp(new THREE.Color(0xfffdf4), heat * 0.8).multiplyScalar(0.5 + heat * 0.7);
+      tint.setHex(STAR_TONES[Math.floor(hash(stars[i].id, 17) * STAR_TONES.length)]);
+      tint.lerp(new THREE.Color(0xffffff), heat * 0.55).multiplyScalar(0.55 + heat * 0.65);
     }
     if (flaring.has(i)) tint.setHex(FLARE);
     if (i === cursor) tint.setHex(0xffffff);
