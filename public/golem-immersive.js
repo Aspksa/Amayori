@@ -53,7 +53,43 @@ function sprite(stops) {
   texture.colorSpace = THREE.SRGBColorSpace;
   return texture;
 }
-const glare = sprite([[0, 'rgba(255,255,255,1)'], [0.16, 'rgba(255,241,208,.8)'], [0.5, 'rgba(255,206,136,.18)'], [1, 'rgba(255,190,110,0)']]);
+function starTexture() {
+  const size = 256, surface = document.createElement('canvas');
+  surface.width = surface.height = size;
+  const paint = surface.getContext('2d');
+  const middle = size / 2;
+  const halo = paint.createRadialGradient(middle, middle, 0, middle, middle, middle);
+  halo.addColorStop(0, 'rgba(255,255,255,1)');
+  halo.addColorStop(0.045, 'rgba(255,252,243,.96)');
+  halo.addColorStop(0.1, 'rgba(255,233,187,.5)');
+  halo.addColorStop(0.24, 'rgba(255,211,146,.16)');
+  halo.addColorStop(0.55, 'rgba(255,196,120,.04)');
+  halo.addColorStop(1, 'rgba(255,190,110,0)');
+  paint.fillStyle = halo;
+  paint.fillRect(0, 0, size, size);
+  // Diffraction spikes: a bare dot reads as a ball, a cross of light reads as a star.
+  paint.globalCompositeOperation = 'lighter';
+  for (const turn of [0, Math.PI / 2, Math.PI / 4, -Math.PI / 4]) {
+    const long = turn % (Math.PI / 2) === 0 ? middle : middle * 0.42;
+    const thick = turn % (Math.PI / 2) === 0 ? size * 0.012 : size * 0.007;
+    paint.save();
+    paint.translate(middle, middle);
+    paint.rotate(turn);
+    const beam = paint.createLinearGradient(-long, 0, long, 0);
+    beam.addColorStop(0, 'rgba(255,214,150,0)');
+    beam.addColorStop(0.42, 'rgba(255,238,200,.42)');
+    beam.addColorStop(0.5, 'rgba(255,255,255,.85)');
+    beam.addColorStop(0.58, 'rgba(255,238,200,.42)');
+    beam.addColorStop(1, 'rgba(255,214,150,0)');
+    paint.fillStyle = beam;
+    paint.fillRect(-long, -thick / 2, long * 2, thick);
+    paint.restore();
+  }
+  const texture = new THREE.CanvasTexture(surface);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+const glare = starTexture();
 const haze = sprite([[0, 'rgba(255,214,150,.16)'], [0.55, 'rgba(188,150,112,.05)'], [1, 'rgba(120,110,120,0)']]);
 
 const pointShader = () => new THREE.ShaderMaterial({
@@ -154,6 +190,7 @@ const starRadius = new Float32Array(MAX_STARS);
 const starUses = new Float32Array(MAX_STARS);
 const regionOf = new Int32Array(MAX_STARS);
 const degree = new Int32Array(MAX_STARS);
+const orbiting = new Int32Array(MAX_STARS);
 const planetOf = new Int32Array(MAX_PLANETS);
 const planetOrbit = new Float32Array(MAX_PLANETS);
 const planetPhase = new Float32Array(MAX_PLANETS);
@@ -271,7 +308,8 @@ function placeStars(count) {
     starPos[i * 3 + 1] = (jitterB - 0.5) * 2 * flat;
     starPos[i * 3 + 2] = Math.sin(theta) * radius + (jitterA - 0.5) * 12;
     const heat = Math.min(1, starUses[i] / 10);
-    starRadius[i] = (1.5 + Math.sqrt(degree[i]) * 0.9 + heat * 2.2) * (preferences.nodeSize / 2);
+    const holds = degree[i] + orbiting[i];
+    starRadius[i] = (0.85 + Math.pow(holds, 0.62) * 1.25 + heat * 1.5) * (preferences.nodeSize / 2);
   }
 }
 
@@ -341,13 +379,14 @@ function buildFigures() {
 function uploadStars() {
   const count = stars.length;
   for (let i = 0; i < count; i++) {
-    matrix.makeScale(starRadius[i], starRadius[i], starRadius[i]);
+    const core = starRadius[i] * 0.42;
+    matrix.makeScale(core, core, core);
     matrix.setPosition(starPos[i * 3], starPos[i * 3 + 1], starPos[i * 3 + 2]);
     starMesh.setMatrixAt(i, matrix);
     glowPos[i * 3] = starPos[i * 3];
     glowPos[i * 3 + 1] = starPos[i * 3 + 1];
     glowPos[i * 3 + 2] = starPos[i * 3 + 2];
-    glowSize[i] = starRadius[i] * 3.5;
+    glowSize[i] = starRadius[i] * 7.2;
   }
   starMesh.count = count;
   starMesh.instanceMatrix.needsUpdate = true;
@@ -429,7 +468,7 @@ function renderLegend(count) {
   }
   const note = document.createElement('p');
   note.className = 'legend-note';
-  note.textContent = 'Звезда — сущность памяти, планеты вокруг — факты о ней. Чем ближе к центру, тем старше знание. '
+  note.textContent = 'Звезда — сущность памяти, планеты вокруг — факты о ней. Размер звезды — сколько знаний и связей она держит. Чем ближе к центру, тем старше знание. '
     + 'Яркость — как часто оно попадает в ответы. Тусклые красные — замещённые факты. '
     + 'Созвездия названы по самой памяти и не повторяют земные.';
   legend.append(note);
@@ -442,6 +481,7 @@ function populate(data) {
   empty = incoming.length === 0;
   indexById = new Map();
   degree.fill(0);
+  orbiting.fill(0);
   regionOf.fill(0);
   starUses.fill(0);
   flaring = new Set();
@@ -474,6 +514,8 @@ function populate(data) {
     const a = indexById.get(String(fact.source)), b = indexById.get(String(fact.target));
     if (a === undefined || b === undefined) continue;
     if (a !== b) { adjacency[a].push(b); adjacency[b].push(a); degree[a]++; degree[b]++; }
+    if (a !== undefined) orbiting[a]++;
+    if (b !== undefined && b !== a) orbiting[b]++;
     if (planets.length < MAX_PLANETS)
       planets.push({
         id: String(fact.id),
@@ -493,12 +535,12 @@ function populate(data) {
   planets.forEach((planet, slot) => {
     const spin = hash(planet.id, 11), tilt = hash(planet.id, 12), size = hash(planet.id, 13);
     planetOf[slot] = planet.star;
-    planetOrbit[slot] = starRadius[planet.star] * (2.6 + spin * 3.4) + 2;
+    planetOrbit[slot] = starRadius[planet.star] * (2.2 + spin * 2.6) + 2;
     planetPhase[slot] = spin * 6.283;
     planetTilt[slot] = (tilt - 0.5) * 1.5;
-    planetSize[slot] = (0.5 + size * 0.7) * Math.max(0.5, planet.confidence) * (preferences.nodeSize / 2);
+    planetSize[slot] = (0.3 + size * 0.42) * Math.max(0.5, planet.confidence) * (preferences.nodeSize / 2);
     planetDead[slot] = 0;
-    tint.setHex(planet.confirmed ? 0xe8c98c : 0x8d7a5e);
+    tint.setHex(planet.confirmed ? 0xc2a877 : 0x6f6350);
     planetMesh.setColorAt(slot, tint);
   });
   if (planetMesh.instanceColor) planetMesh.instanceColor.needsUpdate = true;
@@ -621,8 +663,8 @@ function applyPreferences(value) {
   placeStars(stars.length);
   for (let slot = 0; slot < planets.length; slot++) {
     const planet = planets[slot];
-    planetOrbit[slot] = starRadius[planet.star] * (2.6 + hash(planet.id, 11) * 3.4) + 2;
-    planetSize[slot] = (0.5 + hash(planet.id, 13) * 0.7) * Math.max(0.5, planet.confidence) * (preferences.nodeSize / 2);
+    planetOrbit[slot] = starRadius[planet.star] * (2.2 + hash(planet.id, 11) * 2.6) + 2;
+    planetSize[slot] = (0.3 + hash(planet.id, 13) * 0.42) * Math.max(0.5, planet.confidence) * (preferences.nodeSize / 2);
   }
   uploadStars();
   uploadFigures();
