@@ -208,6 +208,7 @@
         ? "Вчера"
         : d.toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
   }
+  UI.renderMessageContent = renderContent;
   function renderHistory() {
     history.replaceChildren();
     if (!records.length) {
@@ -676,6 +677,7 @@
   addEventListener("storage", (event) => {
     if (event.key === "amayori-chat-update" && !busy) void loadHistory();
   });
+  document.addEventListener("amayori-chat-removed", () => { if (!busy) void loadConversations().then(() => loadHistory()); });
   window.AmayoriChat = {
     openMessage(content) {
       UI.navigate("chat");

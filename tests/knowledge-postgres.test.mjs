@@ -168,5 +168,28 @@ test(
       true,
       "import resets the database sequence without ID collisions",
     );
+    await migration.save([
+      {
+        ...input,
+        predicate: "другая тема",
+        object: "SVG",
+        topic: "Внешний вид",
+      },
+    ]);
+    await migration.mergeTopics("Дизайн", "Внешний вид");
+    const [afterMerge] = await migration.save([
+      { ...input, predicate: "новый источник", object: "Системный" },
+    ]);
+    assert.equal((await migration.detail(afterMerge.id)).topic, "Внешний вид");
+    assert.equal(
+      (await migration.detail(localOld.id)).sources[0].messageId,
+      "local-original",
+    );
+    assert.equal(
+      (await migration.detail(localOld.id)).events.some(
+        (event) => event.type === "topic-merged",
+      ),
+      true,
+    );
   },
 );
