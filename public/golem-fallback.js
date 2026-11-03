@@ -59,7 +59,14 @@ function draw(now) {
   for (let i = 0; i < n; i++) {
     const p = positions[i], size = (1.3 + (p.z + 1) * 1.2) * preferences.nodeSize / 2;
     ctx.fillStyle = i < graph.nodes.length ? '#e6ba72' : 'rgba(158,144,116,.55)';
-    ctx.beginPath(); ctx.arc(p.x, p.y, size, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath();
+    for (let tip = 0; tip < 10; tip++) {
+      const a = -Math.PI / 2 + tip * Math.PI / 5;
+      const r = size * (tip % 2 ? 0.43 : 1.4);
+      const x = p.x + Math.cos(a) * r, y = p.y + Math.sin(a) * r;
+      if (!tip) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.closePath(); ctx.fill();
   }
   if (preferences.autoRotate && !matchMedia('(prefers-reduced-motion: reduce)').matches) angle += elapsed * .000084;
 }
