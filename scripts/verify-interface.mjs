@@ -570,7 +570,8 @@ try {
         .getElementById("notice")
         .textContent.includes("3D не загрузился"),
   );
-  assert.equal(await popup.locator("button:visible").count(), 0);
+  assert.equal(await popup.locator("button:visible").count(), 1);
+  assert.equal(await popup.getByRole("button", {name: "Связи и иммунитет"}).count(), 1);
   if (
     await popup
       .locator("#brain")
